@@ -1,16 +1,27 @@
 // San Francisco heightfield: real coastline (from neighbourhood outlines) + hand-placed hills.
 import * as THREE from 'three';
-import { LAND, FAR_LAND, PARK_GGP, PARK_PRESIDIO, LON0, LAT0, MX, MZ } from './data/geo.js';
+import { LAND as LAND0, FAR_LAND as FAR0, PARK_GGP as GGP0, PARK_PRESIDIO as PRE0, LON0, LAT0, MX, MZ } from './data/geo.js';
 import { clamp, lerp, smoothstep, fbm, noise2, pointInRing, hex2lin, hash2 } from './util.js';
 
-export const MAP = { minX: -9120, maxX: 8160, minZ: -9120, maxZ: 7200, G: 24 };
+// Map size is fixed for the life of the page: 'real' (about 7x7 miles), 'compact' (half scale) or 'bay' (SF + Marin + East Bay at 0.4 scale).
+export const MAPMODE = ['real', 'compact', 'bay'].includes(globalThis.__MAP7) ? globalThis.__MAP7 : 'real';
+export const K = MAPMODE === 'compact' ? 0.5 : MAPMODE === 'bay' ? 0.4 : 1;
+const HS = K === 1 ? 1 : Math.sqrt(K) * 1.05; // hills keep some of their height when the map shrinks
+export const MAP = MAPMODE === 'compact' ? { minX: -4560, maxX: 4080, minZ: -4560, maxZ: 3600, G: 24 }
+  : MAPMODE === 'bay' ? { minX: -5760, maxX: 8400, minZ: -6720, maxZ: 3120, G: 24 }
+  : { minX: -9120, maxX: 8160, minZ: -9120, maxZ: 7200, G: 24 };
+export const SFB = { minX: -9120 * K, maxX: 8160 * K, minZ: -9120 * K, maxZ: 7200 * K }; // the city itself, in every map mode
+const scaleRings = (rs) => (K === 1 ? rs : rs.map((r) => r.map((v) => v * K)));
+// the city and county outlines come from different sources and leave a hairline gap at the county line: cover it
+const SEAM = [-5750, 6780, 3650, 6780, 3650, 6930, -5750, 6930];
+const LAND = scaleRings(LAND0), FAR_LAND = scaleRings([...FAR0, SEAM]), PARK_GGP = scaleRings(GGP0), PARK_PRESIDIO = scaleRings(PRE0);
 export const NX = (MAP.maxX - MAP.minX) / MAP.G + 1;
 export const NZ = (MAP.maxZ - MAP.minZ) / MAP.G + 1;
 const R = 12; // raster resolution for the coastline distance field
 const RW = (MAP.maxX - MAP.minX) / R, RH = (MAP.maxZ - MAP.minZ) / R;
 const CG = 240, CN = 301, C0 = -36000; // coarse backdrop grid
 
-export const ll = (lon, lat) => [(lon - LON0) * MX, -(lat - LAT0) * MZ];
+export const ll = (lon, lat) => [(lon - LON0) * MX * K, -(lat - LAT0) * MZ * K];
 
 // Broad swells [lon, lat, height, rx, rz]
 const SWELLS = [
@@ -104,8 +115,8 @@ function signedDistance(mask, w, h, res) {
 const fine = new Uint8Array(RW * RH);
 rasterize(LAND, RW, RH, MAP.minX, MAP.minZ, R, fine);
 rasterize(FAR_LAND, RW, RH, MAP.minX, MAP.minZ, R, fine);
-for (const [lon, lat, rx, rz] of LAKES) {
-  const [cx, cz] = ll(lon, lat);
+for (const [lon, lat, rx0, rz0] of LAKES) {
+  const [cx, cz] = ll(lon, lat), rx = rx0 * K, rz = rz0 * K;
   const i0 = Math.max(0, Math.floor((cx - rx - MAP.minX) / R)), i1 = Math.min(RW - 1, Math.ceil((cx + rx - MAP.minX) / R));
   const j0 = Math.max(0, Math.floor((cz - rz - MAP.minZ) / R)), j1 = Math.min(RH - 1, Math.ceil((cz + rz - MAP.minZ) / R));
   for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
@@ -131,8 +142,8 @@ export function coastDist(x, z) {
   return bil(SDC, CN, CN, (x - C0) / CG, (z - C0) / CG);
 }
 
-const swells = SWELLS.map(([lon, lat, h, rx, rz]) => [...ll(lon, lat), h, rx, rz]);
-const hills = HILLS.map(([lon, lat, h, r]) => [...ll(lon, lat), h, r]);
+const swells = SWELLS.map(([lon, lat, h, rx, rz]) => [...ll(lon, lat), h * HS, rx * K, rz * K]);
+const hills = HILLS.map(([lon, lat, h, r]) => [...ll(lon, lat), h * HS, r * K]);
 function analyticHeight(x, z, d) {
   if (d <= 0) return -0.6 - 26 * (1 - Math.exp(d / 260));
   let g = 5;
@@ -149,10 +160,10 @@ function analyticHeight(x, z, d) {
   }
   let h = g + Math.cbrt(e);
   h += (fbm(x / 210, z / 210, 3) - 0.47) * (3 + 0.05 * h);
-  if (!inMap(x, z)) { // generic ranges beyond the playable map (Marin, East Bay, Peninsula)
-    const out = Math.max(MAP.minX - x, x - MAP.maxX, MAP.minZ - z, z - MAP.maxZ, 0);
+  const out = Math.max(SFB.minX - x, x - SFB.maxX, SFB.minZ - z, z - SFB.maxZ, 0);
+  if (out > 0) { // generic ranges beyond the city (Marin, East Bay, Peninsula)
     const n = fbm(x / 5200 + 7.3, z / 5200 - 2.1, 4);
-    h += smoothstep(0, 7000, out) * smoothstep(200, 2500, d) * n * n * 760;
+    h += smoothstep(0, 7000 * K, out) * smoothstep(200, 2500, d) * n * n * (MAPMODE === 'bay' && inMap(x, z) ? 300 : 760);
   }
   return 1 + (h - 1) * smoothstep(0, 150, d);
 }
@@ -161,6 +172,51 @@ export const H = new Float32Array(NX * NZ);
 for (let j = 0; j < NZ; j++) for (let i = 0; i < NX; i++) {
   const x = MAP.minX + i * MAP.G, z = MAP.minZ + j * MAP.G;
   H[j * NX + i] = analyticHeight(x, z, coastDist(x, z));
+}
+// ---- terraforming -----------------------------------------------------------------------------
+export const terra = { edits: new Map(), refresh: null }; // vertex index -> edited height
+function fixRegion(i0, j0, i1, j1) {
+  // re-derive the shore distance around the edit from the heightfield as it now stands
+  const M = 30, a0 = Math.max(0, Math.floor((i0 * MAP.G) / R) - M), a1 = Math.min(RW - 1, Math.ceil((i1 * MAP.G) / R) + M);
+  const b0 = Math.max(0, Math.floor((j0 * MAP.G) / R) - M), b1 = Math.min(RH - 1, Math.ceil((j1 * MAP.G) / R) + M), w = a1 - a0 + 1, h = b1 - b0 + 1;
+  const mask = new Uint8Array(w * h);
+  for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) mask[j * w + i] = heightAt(MAP.minX + (a0 + i + 0.5) * R, MAP.minZ + (b0 + j + 0.5) * R) > 0.3 ? 1 : 0;
+  const loc = signedDistance(mask, w, h, R);
+  for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+    const v = loc[j * w + i], o = (b0 + j) * RW + a0 + i, old = SD[o], m = Math.min(i, j, w - 1 - i, h - 1 - j) * R, same = (old > 0) === (v > 0);
+    SD[o] = Math.abs(v) <= m ? v : Math.sign(v) * (same ? Math.max(Math.abs(old), m) : Math.max(m, R));
+  }
+  if (terra.refresh) terra.refresh(i0, j0, i1, j1);
+}
+// mode: raise | lower | flatten | fill (make land) | dig (make water). guard(i, j) may veto a vertex.
+export function sculpt(x, z, radius, mode, amt, guard) {
+  const G = MAP.G, i0 = Math.max(1, Math.ceil((x - radius - MAP.minX) / G)), i1 = Math.min(NX - 2, Math.floor((x + radius - MAP.minX) / G));
+  const j0 = Math.max(1, Math.ceil((z - radius - MAP.minZ) / G)), j1 = Math.min(NZ - 2, Math.floor((z + radius - MAP.minZ) / G));
+  const target = mode === 'flatten' ? Math.max(heightAt(x, z), 1.6) : 0; let changed = false;
+  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+    const d = Math.hypot(MAP.minX + i * G - x, MAP.minZ + j * G - z) / radius; if (d > 1) continue;
+    const w = (1 - d * d) * (1 - d * d), o = j * NX + i, h = H[o]; let nh = h;
+    if (mode === 'raise') nh = Math.min(h + amt * w, 420); else if (mode === 'lower') nh = Math.max(h - amt * w, 1.2);
+    else if (mode === 'flatten') nh = h + (target - h) * Math.min(1, w * amt * 0.35);
+    else if (mode === 'fill') nh = h < 2.6 ? h + (2.6 - h) * Math.min(1, w * 2.2) : h;
+    else if (mode === 'dig') nh = h + (-4 - h) * Math.min(1, w * 1.6);
+    if (Math.abs(nh - h) < 0.01 || (guard && !guard(i, j))) continue;
+    rememberOriginal(o); H[o] = nh; terra.edits.set(o, nh); changed = true;
+  }
+  if (!changed) return null;
+  fixRegion(i0 - 1, j0 - 1, i1 + 1, j1 + 1);
+  return [i0 - 1, j0 - 1, i1 + 1, j1 + 1];
+}
+const H0 = new Map(); // original heights of edited vertices, so a new city can restore the natural terrain
+export function rememberOriginal(o) { if (!H0.has(o)) H0.set(o, H[o]); }
+export function setEdits(list) { // list: [index, height, ...]; replaces all current edits
+  let i0 = 1e9, j0 = 1e9, i1 = -1, j1 = -1;
+  const touch = (o) => { const i = o % NX, j = (o - i) / NX; if (i < i0) i0 = i; if (i > i1) i1 = i; if (j < j0) j0 = j; if (j > j1) j1 = j; };
+  for (const [o, h] of H0) { if (H[o] !== h) { H[o] = h; touch(o); } }
+  terra.edits.clear();
+  for (let k = 0; k + 1 < (list ? list.length : 0); k += 2) { const o = list[k]; if (o < 0 || o >= H.length) continue; rememberOriginal(o); H[o] = list[k + 1]; terra.edits.set(o, list[k + 1]); touch(o); }
+  if (i1 >= 0) fixRegion(Math.max(0, i0 - 1), Math.max(0, j0 - 1), Math.min(NX - 1, i1 + 1), Math.min(NZ - 1, j1 + 1));
+  return i1 >= 0 ? [i0, j0, i1, j1] : null;
 }
 // Height on the rendered triangle surface.
 export function heightAt(x, z) {
@@ -206,7 +262,7 @@ export function raycastGround(ox, oy, oz, dx, dy, dz, maxT = 60000) {
 const C = {
   grassA: hex2lin('#7b8259'), grassB: hex2lin('#93905f'), dry: hex2lin('#a89e72'), park: hex2lin('#586c48'), forest: hex2lin('#4a5a41'),
   rock: hex2lin('#8b8372'), sand: hex2lin('#cdbf9c'), dune: hex2lin('#b5a981'), shallow: hex2lin('#7d958c'), deep: hex2lin('#2c4250'),
-  far: hex2lin('#7f8468'),
+  far: hex2lin('#7f8468'), fill: hex2lin('#9c9684'),
 };
 const mix3 = (a, b, t, o) => { o[0] = lerp(a[0], b[0], t); o[1] = lerp(a[1], b[1], t); o[2] = lerp(a[2], b[2], t); return o; };
 
@@ -230,7 +286,7 @@ export function buildTerrain(scene, zoneTex, GX, GZ) {
     uMapSize: { value: new THREE.Vector2(MAP.maxX - MAP.minX, MAP.maxZ - MAP.minZ) }, uCells: { value: new THREE.Vector2(GX, GZ) },
     uZoneCols: { value: [] }, uShowEmpty: { value: 0.5 }, uShowDev: { value: 0 }, uGrid: { value: 0 },
     uBrush: { value: new THREE.Vector4(0, 0, 0, 0) }, uRect: { value: new THREE.Vector4(0, 0, 0, 0) }, uRectOn: { value: 0 },
-    uPrevCol: { value: new THREE.Color(1, 1, 1) },
+    uPrevCol: { value: new THREE.Color(1, 1, 1) }, uHeatTex: { value: null }, uHeat: { value: 0 }, uHeatScale: { value: new THREE.Vector2(1, 1) },
   };
   const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.96, metalness: 0 });
   mat.onBeforeCompile = (sh) => {
@@ -239,7 +295,7 @@ export function buildTerrain(scene, zoneTex, GX, GZ) {
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWp = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
       varying vec3 vWp;
-      uniform sampler2D uZoneTex; uniform vec2 uMapMin, uMapSize, uCells; uniform vec3 uZoneCols[9];
+      uniform sampler2D uZoneTex; uniform vec2 uMapMin, uMapSize, uCells; uniform vec3 uZoneCols[13]; uniform sampler2D uHeatTex; uniform float uHeat; uniform vec2 uHeatScale;
       uniform float uShowEmpty, uShowDev, uGrid, uRectOn; uniform vec4 uBrush, uRect; uniform vec3 uPrevCol;
       float th(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
       float tn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
@@ -260,6 +316,7 @@ export function buildTerrain(scene, zoneTex, GX, GZ) {
             vec3 zc = uZoneCols[int(zone)];
             diffuseColor.rgb = mix(diffuseColor.rgb, zc, dev > 0.5 ? uShowDev : uShowEmpty);
           }
+          if (uHeat > 0.0) { vec4 hc = texture2D(uHeatTex, cc * uHeatScale); diffuseColor.rgb = mix(diffuseColor.rgb, pow(hc.rgb, vec3(2.2)), hc.a * uHeat); }
           if (uGrid > 0.0) {
             vec2 g = abs(fract(cell) - 0.5);
             float line = max(smoothstep(0.5 - fw.x * 1.2, 0.5, g.x), smoothstep(0.5 - fw.y * 1.2, 0.5, g.y));
@@ -315,10 +372,25 @@ export function buildTerrain(scene, zoneTex, GX, GZ) {
     void idx; geo.setIndex(lods[0]);
     geo.computeBoundingSphere(); geo.computeBoundingBox();
     const m = new THREE.Mesh(geo, mat); m.receiveShadow = true; m.matrixAutoUpdate = false;
-    m.userData = { lods, lod: 0, top };
+    m.userData = { lods, lod: 0, top, tx, tz, w, h };
     tiles.push(m); group.add(m);
   }
 
+  // after terraforming: rewrite heights, normals and colours of the touched vertices
+  terra.refresh = (i0, j0, i1, j1) => {
+    for (const m of tiles) {
+      const u = m.userData, a0 = Math.max(i0, u.tx), a1 = Math.min(i1, u.tx + u.w - 1), b0 = Math.max(j0, u.tz), b1 = Math.min(j1, u.tz + u.h - 1);
+      if (a0 > a1 || b0 > b1) continue;
+      const P = m.geometry.attributes.position, N = m.geometry.attributes.normal, Cc = m.geometry.attributes.color;
+      for (let gj = b0; gj <= b1; gj++) for (let gi = a0; gi <= a1; gi++) {
+        const o = ((gj - u.tz) * u.w + (gi - u.tx)) * 3, x = MAP.minX + gi * MAP.G, z = MAP.minZ + gj * MAP.G, y = H[gj * NX + gi];
+        P.array[o + 1] = y; const sl = nrm(gi, gj, nv); N.array[o] = nv[0]; N.array[o + 1] = nv[1]; N.array[o + 2] = nv[2];
+        groundColor(x, z, y, coastDist(x, z), sl, col); if (terra.edits.has(gj * NX + gi) && y > 0.5) mix3(col, C.fill, 0.55, col);
+        Cc.array[o] = col[0]; Cc.array[o + 1] = col[1]; Cc.array[o + 2] = col[2];
+      }
+      P.needsUpdate = N.needsUpdate = Cc.needsUpdate = true;
+    }
+  };
   // distant land, same height function sampled coarsely; cells inside the map are skipped
   {
     const pos = new Float32Array(CN * CN * 3), cols = new Float32Array(CN * CN * 3);
@@ -392,7 +464,7 @@ export function buildTerrain(scene, zoneTex, GX, GZ) {
 
 // ---- wild trees (parks + wooded hills) ------------------------------------------------------
 export function buildForests(scene) {
-  const forests = FORESTS.map(([lon, lat, r, dens]) => [...ll(lon, lat), r, dens]);
+  const forests = FORESTS.map(([lon, lat, r, dens]) => [...ll(lon, lat), r * K, dens]);
   const S = 27, BUCKET = 1728;
   const buckets = new Map();
   const palette = ['#4c5b3c', '#59664a', '#42513a', '#66704f', '#6c7458', '#8d7a3e', '#9a6a36', '#7f5a34'].map(hex2lin);

@@ -13,11 +13,14 @@ const KEYS = [
   { s: 1.00, zen: col('#6c93c4'), hor: col('#c6d1d8'), sun: col('#fff6e8'), si: 2.9, hemiS: col('#d6e0ec'), hemiG: col('#8a8372'), hi: 1.8 },
 ];
 
+const SUNSET_HOR = col('#ff7f47'), SUNSET_ZEN = col('#7a4f8f'), SUNSET_SUN = col('#ff7a3d'), GREY = new THREE.Color();
+
 export class Sky {
   constructor(scene, renderer) {
     this.scene = scene;
     this.sunDir = new THREE.Vector3(0, 1, 0); this.lightDir = new THREE.Vector3(0, 1, 0);
     this.zen = new THREE.Color(); this.hor = new THREE.Color(); this.night = 0; this.sunH = 1;
+    this.wx = { fog: 0, rain: 0, sunset: 0.5 }; // weather: fog and rain grey the light, sunset tints the low sun
     this.sun = new THREE.DirectionalLight(0xffffff, 3);
     this.sun.castShadow = true; this.sun.shadow.mapSize.set(2048, 2048);
     this.sun.shadow.bias = -0.0006; this.sun.shadow.normalBias = 0.6;
@@ -88,6 +91,16 @@ export class Sky {
     this.zen.lerpColors(A.zen, B.zen, t); this.hor.lerpColors(A.hor, B.hor, t);
     this.sun.color.lerpColors(A.sun, B.sun, t); this.sun.intensity = lerp(A.si, B.si, t);
     this.hemi.color.lerpColors(A.hemiS, B.hemiS, t); this.hemi.groundColor.lerpColors(A.hemiG, B.hemiG, t); this.hemi.intensity = lerp(A.hi, B.hi, t);
+    {
+      const w = this.wx, glow = w.sunset * smoothstep(-0.1, 0.03, s) * (1 - smoothstep(0.1, 0.34, s)) * (1 - w.fog * 0.8) * (1 - w.rain);
+      if (glow > 0) { this.hor.lerp(SUNSET_HOR, glow * 0.55); this.zen.lerp(SUNSET_ZEN, glow * 0.3); this.sun.color.lerp(SUNSET_SUN, glow * 0.5); }
+      const grey = Math.min(1, w.fog * 0.75 + w.rain * 0.7);
+      if (grey > 0) {
+        const l = 0.3 * this.hor.r + 0.5 * this.hor.g + 0.2 * this.hor.b; GREY.setRGB(l * 0.93, l * 0.96, l);
+        this.hor.lerp(GREY, grey * 0.85); const lz = 0.3 * this.zen.r + 0.5 * this.zen.g + 0.2 * this.zen.b; GREY.setRGB(lz * 0.95 + 0.04 * (1 - this.night), lz * 0.97 + 0.04 * (1 - this.night), lz + 0.04 * (1 - this.night)); this.zen.lerp(GREY, grey * 0.9);
+        this.sun.intensity *= 1 - 0.62 * w.fog - 0.55 * w.rain * (1 - w.fog); this.hemi.intensity *= 1 + 0.12 * w.fog - 0.22 * w.rain; this.hemi.color.lerp(GREY, grey * 0.6);
+      }
+    }
     this.night = 1 - smoothstep(-0.12, 0.1, s);
     // below the horizon the moon takes over as the key light
     if (s > -0.03) this.lightDir.copy(this.sunDir); else this.lightDir.set(-this.sunDir.x * 0.6, 0.55 + 0.3 * -s, -this.sunDir.z * 0.6 - 0.3).normalize();
@@ -100,7 +113,7 @@ export class Sky {
 
   // Keep the shadow frustum centred on what the camera looks at.
   update(camera, target, dist, time) {
-    const fogD = Math.min(0.000042, 0.42 / Math.max(dist, 1));
+    const fogD = Math.min(0.000042, 0.42 / Math.max(dist, 1)) + this.wx.fog * Math.min(0.004, 0.5 / Math.max(dist, 100)) + this.wx.rain * 0.00006;
     this.scene.fog.density = fogD; this.waterU.uFogD.value = fogD; this.waterU.uTime.value = time;
     const S = clamp(dist * 0.85, 220, 4200), cam = this.sun.shadow.camera;
     if (cam.right !== S) { cam.left = -S; cam.right = S; cam.top = S; cam.bottom = -S; cam.near = 10; cam.far = S * 8 + 2500; cam.updateProjectionMatrix(); }

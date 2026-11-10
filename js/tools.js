@@ -1,15 +1,25 @@
 // Pointer, wheel, touch and keyboard input, plus the four tools: inspect, roads, zones, bulldoze.
 import * as THREE from 'three';
-import { MAP, heightAt, raycastGround } from './terrain.js';
+import { MAP, heightAt, raycastGround, coastDist } from './terrain.js';
 import { CELL, GX, GZ, zone, road, bid, land, buildings, removeBuilding, refreshOverlay, ZONES, toI, toJ, inGrid, state as W } from './world.js';
 import { ROAD_TYPES, previewGeometry, cumLen } from './roads.js';
 import { clamp } from './util.js';
+import { CAT } from './structures.js';
+import { dimsOf, siteOf, checkPlace, place, smartFill, terraform, pier, costOf } from './place.js';
+import { city, markDirty, paintHood, money, canAfford, spend, priceIndex, nm } from './city.js';
+import { ignite, prebuiltCircuit, circuitOk, setCircuit, culture } from './culture.js';
+import { LINE_TYPES } from './life.js';
+
+const LINE_NAMES = { bus: ['1 California', '5 Fulton', '14 Mission', '22 Fillmore', '38 Geary', '49 Van Ness', '7 Haight', '24 Divisadero', '29 Sunset', '30 Stockton', '44 O\'Shaughnessy', '48 Quintara'], cable: ['Powell and Hyde', 'Powell and Mason', 'California Street'], metro: ['N Judah', 'J Church', 'K Ingleside', 'L Taraval', 'M Ocean View', 'T Third'], ferry: ['Sausalito Ferry', 'Alameda Ferry', 'Tiburon Ferry', 'Oakland Ferry', 'Vallejo Ferry'] };
+const LINE_COLS = ['#c2572f', '#3f7fb8', '#3f9c8c', '#b8862c', '#8a5fc8', '#b84a6a', '#5f9c4a', '#6a7f8c'];
 
 export function makeTools(game) {
   const { canvas, camera, rig, roads, undo, scene, terrainU } = game;
   const T = {
     tool: 'inspect', roadType: 'street', roadMode: 'straight', zoneId: 1, zoneMode: 'brush', brush: 3,
     snapGrid: true, snapAngle: true, blockW: 96, blockH: 176, scroll: 'auto', chain: null, ctrl: null, selected: null, hover: null,
+    buildCat: 'park', buildKey: 'park', buildRot: 2, fill: { items: { tree: true, bench: true, lamp: true, planter: false, fountain: false, plaza: false }, density: 0.5, prompt: '' },
+    lineType: 'bus', lineDraft: null, terraMode: 'raise', terraSize: 90, lockMode: 'lock', disaster: 'fire', quakeMag: 6.5, circuitMode: 'prebuilt', circuitDraft: null, hoodId: 0, hoodSize: 160,
   };
   const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), keys = new Set();
   let drag = null, lastPtr = { x: 0, y: 0 }, hoverDirty = false;
@@ -127,6 +137,7 @@ export function makeTools(game) {
   let zbox = null;
   function paintCell(i, j, z) {
     const o = j * GX + i; if (!land[o] || road[o] || zone[o] === z) return;
+    if (bid[o]) { const b = buildings.get(bid[o]); if (b && (b.sp || b.locked)) return; }
     undo.logZone(o, zone[o], z); zone[o] = z;
     if (bid[o]) { const b = buildings.get(bid[o]); if (b && b.zone !== z) undo.logBuilding(removeBuilding(b.id)); }
     if (i < zbox[0]) zbox[0] = i; if (j < zbox[1]) zbox[1] = j; if (i > zbox[2]) zbox[2] = i; if (j > zbox[3]) zbox[3] = j;
@@ -166,12 +177,17 @@ export function makeTools(game) {
     else if (g) { const s = roads.nearestSeg(g.x, g.z, clamp(rig.dist * 0.012, 8, 30)); if (s) roads.removeRaw(s.seg.id); }
     undo.commit();
   }
+  // prebuilt circuit laid along existing streets when the click is inside a street grid
+  let loopKey = '', loopVal = null;
+  function streetLoop(x0, z0) { const cx = Math.round(x0 / 48) * 48, cz = Math.round(z0 / 48) * 48, key = cx + ',' + cz + ',' + roads.segs.size; if (key === loopKey) return loopVal; loopKey = key; return (loopVal = streetLoopRaw(cx, cz)); }
+  function streetLoopRaw(cx, cz) { const k = Math.max(game.mapK || 1, 0.6), a = 560 * k, b = 300 * k; return game.life.snapLoop([cx - a, cz - b, cx, cz - b, cx + a, cz - b, cx + a, cz + b, cx, cz + b, cx - a, cz + b], 170); }
   function bulldozeRect(a, b) {
     const x0 = Math.min(a.x, b.x), x1 = Math.max(a.x, b.x), z0 = Math.min(a.z, b.z), z1 = Math.max(a.z, b.z);
     undo.begin('bulldoze');
     const ids = new Set();
     for (let j = clamp(toJ(z0), 0, GZ - 1); j <= clamp(toJ(z1), 0, GZ - 1); j++) for (let i = clamp(toI(x0), 0, GX - 1); i <= clamp(toI(x1), 0, GX - 1); i++) if (bid[j * GX + i]) ids.add(bid[j * GX + i]);
-    for (const id of ids) undo.logBuilding(removeBuilding(id));
+    let kept = 0; for (const id of ids) { if (buildings.get(id)?.locked) { kept++; continue; } undo.logBuilding(removeBuilding(id)); }
+    if (kept) game.ui.toast(`${kept} historic building${kept === 1 ? '' : 's'} kept. Unlock or click to remove.`);
     for (const id of roads.near(x0, z0, x1, z1)) { const s = roads.segs.get(id), bb = s.bbox; if (bb[0] >= x0 && bb[2] <= x1 && bb[1] >= z0 && bb[3] <= z1) roads.removeRaw(id); }
     undo.commit();
   }
@@ -194,8 +210,79 @@ export function makeTools(game) {
         const b = pickBuilding(lastPtr.x, lastPtr.y); highlight(b, true);
         if (!b && h) { const s = roads.nearestSeg(h.x, h.z, clamp(rig.dist * 0.012, 8, 30)); if (s) { const Tt = ROAD_TYPES[s.seg.type]; addPreview(s.seg.pts, Tt.half + Tt.walk, false); } }
       }
+    } else if (T.tool === 'build') buildHover(h);
+    else if (T.tool === 'lock' || T.tool === 'disaster') {
+      if (drag && drag.mode === 'lrect' && drag.moved && h) { terrainU.uPrevCol.value.set('#dcb466'); terrainU.uRect.value.set(Math.min(drag.a.x, h.x), Math.min(drag.a.z, h.z), Math.max(drag.a.x, h.x), Math.max(drag.a.z, h.z)); terrainU.uRectOn.value = 1; highlight(null); }
+      else highlight(pickBuilding(lastPtr.x, lastPtr.y), T.tool === 'disaster');
     } else highlight(T.selected && buildings.has(T.selected.id) ? T.selected : null);
+    if (T.tool === 'terrain' && h) {
+      terrainU.uPrevCol.value.set(T.terraMode === 'dig' ? '#5b8fa8' : '#dcb466');
+      if (T.terraMode === 'pier') { if (drag && drag.mode === 'pier') addPreview([drag.a.x, drag.a.z, h.x, h.z], Math.max(12, T.terraSize * 0.35)); else terrainU.uBrush.value.set(h.x, h.z, Math.max(12, T.terraSize * 0.35), 1); }
+      else terrainU.uBrush.value.set(h.x, h.z, T.terraSize, 1);
+    }
+    if (T.tool === 'transit' && h) {
+      const s = snapStop(h); if (T.lineDraft && T.lineDraft.length >= 2) { const d = T.lineDraft.slice(); if (s) d.push(s.x, s.z); if (d.length >= 4) addPreview(d, 3, true); }
+      if (s) addPreview([s.x - 5, s.z, s.x + 5, s.z], 5, true); else addPreview([h.x - 4, h.z, h.x + 4, h.z], 4, false);
+    }
+    if (T.tool === 'hood' && h) { terrainU.uPrevCol.value.set('#dcb466'); terrainU.uBrush.value.set(h.x, h.z, T.hoodSize, 1); }
   }
+  // ---- structures ---------------------------------------------------------------------------------
+  function lotAt(h) { const c = CAT[T.buildKey]; if (!c || c.rect) return null; const [w, d] = dimsOf(T.buildKey, T.buildRot); return { i: toI(h.x) - (w >> 1), j: toJ(h.z) - (d >> 1), w, d, front: T.buildRot }; }
+  function buildHover(h) {
+    highlight(null); if (!h) return; const k = T.buildKey;
+    if (k === 'smartfill' || (CAT[k] && CAT[k].rect)) {
+      terrainU.uPrevCol.value.set(k === 'smartfill' ? '#dcb466' : '#8fc27a');
+      if (drag && (drag.mode === 'srect' || drag.mode === 'fillrect')) { terrainU.uRect.value.set(Math.min(drag.a.x, h.x), Math.min(drag.a.z, h.z), Math.max(drag.a.x, h.x), Math.max(drag.a.z, h.z)); terrainU.uRectOn.value = 1; }
+      else terrainU.uBrush.value.set(h.x, h.z, 6, 1); return;
+    }
+    if (k === 'circuit') { const pts = T.circuitMode === 'prebuilt' ? (streetLoop(h.x, h.z) || prebuiltCircuit(h.x, h.z)) : T.circuitDraft ? T.circuitDraft.concat([h.x, h.z]) : null; if (pts && pts.length >= 4) addPreview(T.circuitMode === 'prebuilt' ? pts.concat([pts[0], pts[1]]) : pts, 7, circuitOk(pts)); else terrainU.uBrush.value.set(h.x, h.z, 8, 1); return; }
+    const l = lotAt(h); if (!l) return; const c = CAT[k], bad = !!checkPlace(k, l.i, l.j, l.w, l.d);
+    const x0 = MAP.minX + l.i * CELL, z0 = MAP.minZ + l.j * CELL, w = l.w * CELL, d = l.d * CELL, y0 = Math.max(heightAt(x0 + w / 2, z0 + d / 2), 0) - 1, y1 = y0 + Math.min(c.h, 60) + 2;
+    hl.position.set(x0 + w / 2, (y0 + y1) / 2, z0 + d / 2); hl.scale.set(w, y1 - y0, d); hl.visible = true; boxMat.color.set(bad ? 0xd2533c : 0x8fc27a); hlEdges.material.color.set(bad ? 0xf08a70 : 0xc8e6b8);
+    const fx = [0, 1, 0, -1][l.front], fz = [-1, 0, 1, 0][l.front], cx = x0 + w / 2 + fx * (w / 2 + 3), cz = z0 + d / 2 + fz * (d / 2 + 3); addPreview([cx - fz * 4 - fx * 2, cz + fx * 4 - fz * 2, cx - fz * -4 - fx * 2, cz + fx * -4 - fz * 2], 1.5, !bad); // entrance side
+  }
+  function buildClick(g) {
+    const k = T.buildKey;
+    if (k === 'circuit') {
+      if (T.circuitMode === 'prebuilt') { const pts = streetLoop(g.x, g.z) || prebuiltCircuit(g.x, g.z); if (!circuitOk(pts)) return game.ui.toast('The circuit needs dry land all the way round', 'warn'); setCircuit(pts); }
+      else { const d = T.circuitDraft || (T.circuitDraft = []); if (d.length >= 8 && Math.hypot(g.x - d[0], g.z - d[1]) < 60) return api.finish(); d.push(Math.round(g.x), Math.round(g.z)); }
+      return;
+    }
+    const l = lotAt(g); if (!l) return; undo.begin('build'); const b = place(game, k, l.i, l.j, l.w, l.d, l.front); undo.commit(); if (b && CAT[k].cat === 'landmark') game.ui.toast(`${nm(CAT[k].name)} built`, 'gold');
+  }
+  function buildRect(a, g) {
+    const i0 = clamp(toI(Math.min(a.x, g.x)), 0, GX - 1), i1 = clamp(toI(Math.max(a.x, g.x)), 0, GX - 1), j0 = clamp(toJ(Math.min(a.z, g.z)), 0, GZ - 1), j1 = clamp(toJ(Math.max(a.z, g.z)), 0, GZ - 1);
+    undo.begin('build'); place(game, T.buildKey, i0, j0, i1 - i0 + 1, j1 - j0 + 1, 2); undo.commit();
+  }
+  // ---- transit ------------------------------------------------------------------------------------
+  function snapStop(h) {
+    if (T.lineType === 'ferry') { const d = coastDist(h.x, h.z); return Math.abs(d) < 110 ? { x: Math.round(h.x), z: Math.round(h.z) } : null; }
+    const s = roads.nearestSeg(h.x, h.z, 70); return s && s.seg.type !== 'highway' ? { x: Math.round(s.x * 10) / 10, z: Math.round(s.z * 10) / 10 } : null;
+  }
+  function transitClick(g) {
+    const s = snapStop(g); if (!s) return game.ui.toast(T.lineType === 'ferry' ? 'Ferry stops go on the shore' : 'Stops go on a street', 'warn');
+    const d = T.lineDraft || (T.lineDraft = []); if (d.length >= 2 && Math.hypot(s.x - d[d.length - 2], s.z - d[d.length - 1]) < 30) return api.finish();
+    if (d.length >= 60) return game.ui.toast('A line can have 30 stops', 'warn'); d.push(s.x, s.z);
+  }
+  const copyLines = () => city.lines.map((l) => ({ id: l.id, type: l.type, name: l.name, color: l.color, stops: l.stops.slice() }));
+  undo.setLines = (ls) => { city.lines = ls.map((l) => ({ ...l, stops: l.stops.slice() })); game.life.rebuildTransit(); markDirty(); game.ui.refresh(true); };
+  function finishLine() {
+    const d = T.lineDraft; T.lineDraft = null; if (!d || d.length < 4) return;
+    let len = 0; for (let k = 2; k < d.length; k += 2) len += Math.hypot(d[k] - d[k - 2], d[k + 1] - d[k - 1]);
+    const cost = ({ bus: 4, cable: 30, metro: 120, ferry: 40 }[T.lineType] * (len / 1000) + (d.length / 2) * 3) * priceIndex(); if (!canAfford(cost)) return game.ui.toast(`Not enough in the treasury (${money(cost)})`, 'warn');
+    const before = copyLines(), same = city.lines.filter((l) => l.type === T.lineType).length, names = LINE_NAMES[T.lineType];
+    city.lines.push({ id: city.nextLine++, type: T.lineType, name: names[same] || `${LINE_TYPES[T.lineType].name} ${same + 1}`, color: T.lineType === 'cable' ? '#8a2f2a' : LINE_COLS[(city.nextLine + 6) % LINE_COLS.length], stops: d });
+    spend(cost); undo.begin('transit line'); undo.logLines(before, copyLines()); undo.commit(); game.life.rebuildTransit(); markDirty(); game.ui.toast(`${city.lines[city.lines.length - 1].name} is running`);
+  }
+  function removeLine(id) { const before = copyLines(); city.lines = city.lines.filter((l) => l.id !== id); undo.begin('remove line'); undo.logLines(before, copyLines()); undo.commit(); game.life.rebuildTransit(); markDirty(); }
+  // ---- historic locks and disasters ----------------------------------------------------------------
+  function lockRect(a, g) {
+    const on = T.lockMode === 'lock', ids = new Set(); let n = 0;
+    for (let j = clamp(toJ(Math.min(a.z, g.z)), 0, GZ - 1); j <= clamp(toJ(Math.max(a.z, g.z)), 0, GZ - 1); j++) for (let i = clamp(toI(Math.min(a.x, g.x)), 0, GX - 1); i <= clamp(toI(Math.max(a.x, g.x)), 0, GX - 1); i++) if (bid[j * GX + i]) ids.add(bid[j * GX + i]);
+    for (const id of ids) { const b = buildings.get(id); if (b && !b.sp && !!b.locked !== on) { if (on) b.locked = true; else delete b.locked; n++; } }
+    game.ui.toast(n ? `${n} building${n === 1 ? '' : 's'} ${on ? 'locked as historic' : 'unlocked'}` : 'Nothing to change here');
+  }
+  void [refreshHover];
 
   // ---- pointer events ----------------------------------------------------------------------------
   function gestureStart() {
@@ -216,6 +303,11 @@ export function makeTools(game) {
         else if (T.zoneMode === 'rect') drag = { ...base, mode: 'zrect', a: g };
         else drag = { ...base, mode: 'click' };
       } else if (T.tool === 'bulldoze') drag = { ...base, mode: 'brect', a: g };
+      else if (T.tool === 'build') { const c = CAT[T.buildKey]; drag = T.buildKey === 'smartfill' ? { ...base, mode: 'fillrect', a: g } : c && c.rect ? { ...base, mode: 'srect', a: g } : { ...base, mode: 'click' }; }
+      else if (T.tool === 'transit' || T.tool === 'disaster') drag = { ...base, mode: 'click' };
+      else if (T.tool === 'lock') drag = { ...base, mode: 'lrect', a: g };
+      else if (T.tool === 'terrain') drag = T.terraMode === 'pier' ? { ...base, mode: 'pier', a: g } : { ...base, mode: 'sculpt', acc: 1 };
+      else if (T.tool === 'hood') { paintHood(g.x, g.z, T.hoodSize, T.hoodId); drag = { ...base, mode: 'hpaint' }; }
     }
   });
   canvas.addEventListener('pointermove', (e) => {
@@ -235,6 +327,7 @@ export function makeTools(game) {
     if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 5) drag.moved = true;
     if (drag.mode === 'rotate') rig.rotate(-dx * 0.006, dy * 0.005);
     else if (drag.mode === 'pan' && drag.moved && drag.p) { const p = planeAt(e.clientX, e.clientY, rig.target.y); if (p) { rig.panImmediate(drag.p.x - p.x, drag.p.z - p.z); rig.apply(); } }
+    else if (drag.mode === 'hpaint') { const g = groundAt(e.clientX, e.clientY); if (g) { paintHood(g.x, g.z, T.hoodSize, T.hoodId); game.ui.refresh(true); } }
     else if (drag.mode === 'brush') {
       const g = groundAt(e.clientX, e.clientY); if (!g) return;
       const l = drag.last, n = Math.max(1, Math.ceil(Math.hypot(g.x - l.x, g.z - l.z) / (CELL * 0.75)));
@@ -252,7 +345,17 @@ export function makeTools(game) {
     else if (d.mode === 'grid') { if (g) { const lines = gridLines(d.a, snap(g)); undo.begin('road grid'); let n = 0; for (const l of lines) if (roads.add(T.roadType, l).ok) n++; undo.commit(); if (!n) game.ui.toast('No room for a grid here', 'warn'); } }
     else if (d.mode === 'zrect') { if (g) { undo.begin('zone'); paintRect(d.a, g, T.zoneId); undo.commit(); } }
     else if (d.mode === 'brect') { if (d.moved && g && Math.hypot(g.x - d.a.x, g.z - d.a.z) > 6) bulldozeRect(d.a, g); else bulldozeAt(e.clientX, e.clientY, g); }
-    else if (d.mode === 'click' && !d.moved && g) { if (T.tool === 'road') roadClick(g); else if (T.tool === 'zone') floodFill(g, T.zoneId); }
+    else if (d.mode === 'srect') { if (g && d.moved) buildRect(d.a, g); }
+    else if (d.mode === 'fillrect') { if (g && d.moved) { const n = smartFill(game, d.a, g, T.fill.items, T.fill.density); game.ui.toast(n ? `Smart-fill placed ${n} item${n === 1 ? '' : 's'}` : 'No empty land in that area', n ? '' : 'warn'); } }
+    else if (d.mode === 'pier') { if (g && Math.hypot(g.x - d.a.x, g.z - d.a.z) > 20) { if (!pier(game, d.a, g, Math.max(12, T.terraSize * 0.35))) game.ui.toast('Nothing to fill there', 'warn'); } }
+    else if (d.mode === 'lrect') {
+      if (d.moved && g && Math.hypot(g.x - d.a.x, g.z - d.a.z) > 6) lockRect(d.a, g);
+      else { const b = pickBuilding(e.clientX, e.clientY); if (b && !b.sp) { if (b.locked) delete b.locked; else b.locked = true; game.ui.toast(b.locked ? 'Locked as historic. It will not be redeveloped.' : 'Unlocked'); } }
+    }
+    else if (d.mode === 'click' && !d.moved && g) {
+      if (T.tool === 'road') roadClick(g); else if (T.tool === 'zone') floodFill(g, T.zoneId); else if (T.tool === 'build') buildClick(g); else if (T.tool === 'transit') transitClick(g);
+      else if (T.tool === 'disaster') { const b = pickBuilding(e.clientX, e.clientY); if (b && ignite(b)) game.ui.toast('Fire started'); else game.ui.toast('Click a building to set it alight', 'warn'); }
+    }
     game.ui.refresh();
   }
   canvas.addEventListener('pointerup', end); canvas.addEventListener('pointercancel', end);
@@ -282,8 +385,11 @@ export function makeTools(game) {
     if (mod) return;
     keys.add(e.code);
     if (e.code === 'Space') e.preventDefault();
-    if (e.code === 'Escape') { if (T.chain) { T.chain = null; T.ctrl = null; } else if (T.selected) { T.selected = null; game.ui.showInfo(null); } else api.setTool('inspect'); hoverDirty = true; }
-    const tool = { Digit1: 'inspect', Digit2: 'road', Digit3: 'zone', Digit4: 'bulldoze' }[e.code]; if (tool) api.setTool(tool);
+    if (e.code === 'Escape') { if (T.chain) { T.chain = null; T.ctrl = null; } else if (T.lineDraft || T.circuitDraft) { T.lineDraft = null; T.circuitDraft = null; } else if (T.selected) { T.selected = null; game.ui.showInfo(null); } else api.setTool('inspect'); hoverDirty = true; }
+    const tool = { Digit1: 'inspect', Digit2: 'road', Digit3: 'zone', Digit4: 'bulldoze', Digit5: 'build', Digit6: 'transit', Digit7: 'terrain' }[e.code]; if (tool) api.setTool(tool);
+    if (e.code === 'KeyT' && T.tool === 'build') { T.buildRot = (T.buildRot + 1) & 3; hoverDirty = true; }
+    if (e.code === 'Enter') api.finish();
+    if (e.code === 'KeyH') game.ui.toggleHud && game.ui.toggleHud();
     if (e.code === 'KeyP') game.setSpeed(game.speed ? 0 : game.lastSpeed || 1);
   });
   window.addEventListener('keyup', (e) => keys.delete(e.code));
@@ -291,7 +397,9 @@ export function makeTools(game) {
 
   const api = {
     state: T,
-    setTool(t) { T.tool = t; T.chain = null; T.ctrl = null; drag = null; hoverDirty = true; canvas.style.cursor = t === 'inspect' ? 'grab' : 'crosshair'; game.ui.refresh(); },
+    setTool(t) { if (game.readOnly) t = 'inspect'; if (T.lineDraft && T.lineDraft.length >= 4 && t !== 'transit') finishLine(); T.tool = t; T.chain = null; T.ctrl = null; T.lineDraft = null; T.circuitDraft = null; drag = null; hoverDirty = true; canvas.style.cursor = t === 'inspect' ? 'grab' : 'crosshair'; game.ui.refresh(); },
+    finish() { if (T.tool === 'transit') finishLine(); else if (T.tool === 'build' && T.buildKey === 'circuit' && T.circuitDraft) { const d = T.circuitDraft; T.circuitDraft = null; if (d.length < 8) game.ui.toast('A circuit needs at least 4 corners', 'warn'); else if (!circuitOk(d)) game.ui.toast('The circuit needs dry land all the way round', 'warn'); else setCircuit(game.life.snapLoop(d, 60) || d); } hoverDirty = true; game.ui.refresh(true); },
+    removeLine, siteBuild(key) { const s = siteOf(key); if (!s) return null; undo.begin('build'); const b = place(game, key, s.i, s.j, s.w, s.d, s.front, { relaxed: true }); undo.commit(); if (b) { game.ui.toast(`${nm(CAT[key].name)} built at its real site`, 'gold'); rig.set(s.x, s.z, Math.max(700, CAT[key].h * 5), rig.gYaw, 0.5, false); } return b; },
     cancel() { T.chain = null; T.ctrl = null; hoverDirty = true; },
     touch() { hoverDirty = true; },
     update(dt) {
@@ -304,8 +412,9 @@ export function makeTools(game) {
       if (keys.has('KeyQ')) { rig.rotate(1.6 * dt, 0); hoverDirty = true; } if (keys.has('KeyE')) { rig.rotate(-1.6 * dt, 0); hoverDirty = true; }
       if (keys.has('KeyR')) rig.rotate(0, 0.9 * dt); if (keys.has('KeyF')) rig.rotate(0, -0.9 * dt);
       if (keys.has('Equal') || keys.has('NumpadAdd')) rig.zoom(Math.exp(-1.6 * dt), null); if (keys.has('Minus') || keys.has('NumpadSubtract')) rig.zoom(Math.exp(1.6 * dt), null);
+      if (drag && drag.mode === 'sculpt') { drag.acc += dt; if (drag.acc > 0.07) { const h = groundAt(lastPtr.x, lastPtr.y); if (h) terraform(game, h.x, h.z, T.terraSize, T.terraMode, T.terraMode === 'flatten' ? 1 : 1.5 * (drag.acc / 0.07) * 0.5); drag.acc = 0; hoverDirty = true; } }
       refreshHover();
-      terrainU.uGrid.value = T.tool === 'zone' || T.tool === 'road' ? 1 : 0;
+      terrainU.uGrid.value = T.tool === 'zone' || T.tool === 'road' || T.tool === 'build' ? 1 : 0;
       terrainU.uShowDev.value = T.tool === 'zone' ? 0.5 : 0; terrainU.uShowEmpty.value = T.tool === 'zone' ? 0.72 : 0.17;
     },
     groundAt, pickBuilding,

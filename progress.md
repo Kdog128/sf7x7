@@ -19,3 +19,19 @@ Straight chain, curve, grid drag, block fill, rectangle, brush, undo/redo keys, 
 - Frame rate not measured on a real GPU. Resolution scale steps down when fps < 27.
 - Office/commercial demand saturates fast in the demo; skyline peak is modest.
 - Trackpad vs mouse wheel is auto-detected via wheelDeltaY; override in Menu > Scroll wheel.
+
+## Phases 2 to 5 (built)
+Modules: structures.js (catalog, landmarks, venues, styles), city.js (64 m grids for land value, satisfaction, noise, services, transit, traffic; economy, taxes, policies, neighborhoods, history), tech.js (waves by year, random and manual booms and busts, startup lifecycle and directory), culture.js (venues, artists, lineups, leagues and seasons, 9 festivals, Grand Prix, Olympic bid, fires and quakes, 35 achievements, tips), life.js (cars, robotaxis, pedestrians, transit vehicles and routing, fog, rain, cranes, particles, event staging, air taxis), audio.js, place.js (placing, Smart-fill, terraforming, piers, street grid, south highway), cloud.js (Supabase RPC saves, sync code, share links), panels.js (City drawer), ui.js, save.js v2, api/detail.js (Claude prompt for Smart-fill, needs ANTHROPIC_API_KEY).
+
+Decisions: 4 game days = 1 year (one per season). Map size reloads with ?map=compact|bay; saves record the map. Shared ?city=ID view is read-only and forces parody names. Saves live in Supabase (project iaxxvgwivltgevwkkgmi, sf7x7_ objects, RLS on, access only through security definer functions keyed by a sync code kept in a cookie). No browser storage APIs. T rotates a structure, C opens the City panel, H hides the HUD. window.advanceDays(n) fast-forwards for tests.
+
+Verified in the browser with real input (software GL): setup options (map, start, era, money, interface, camera), demo, Build tool for every category, all 12 landmarks at their real sites on all 3 maps, Smart-fill with checkboxes and prompt, undo and redo of fills, transit line drawing and routing, terrain raise, landfill, dig and pier, historic locks (click, drag, info panel), fire and earthquake, festivals, Grand Prix on streets, Olympic bid through to the vote, overlays and legend, weather, sound toggle, all City tabs, tech boom and bust, 20 years of fast-forward in Budget mode, cloud save, load, overwrite, share, read-only view, export, import of v1 and v2 files, 390 px layout.
+
+Known limits:
+- Frame rate is not measured on a real GPU. Simulation step is about 0.2 ms; rendering is the cost.
+- Landmark coordinates are approximate. Bay Area coastline is the Census 500k outline.
+- Metro runs at street level. A pier is a straight strip of landfill. Terraforming cannot be undone.
+- Budget mode is generous: a 75,000 resident city banks money quickly.
+- Simulated traffic affects land value and satisfaction; cars do not queue.
+- Vercel deploy is blocked: the connected token cannot reach team kdog128-s-projects.
+- Existing Supabase project has 8 unrelated tables with RLS disabled (reported to the user, not changed).

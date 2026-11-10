@@ -29,12 +29,12 @@ const ICO_V = [[-1, t, 0], [1, t, 0], [-1, -t, 0], [1, -t, 0], [0, -1, t], [0, 1
 const ICO_F = [0, 11, 5, 0, 5, 1, 0, 1, 7, 0, 7, 10, 0, 10, 11, 1, 5, 9, 5, 11, 4, 11, 10, 2, 10, 7, 6, 7, 1, 8, 3, 9, 4, 3, 4, 2, 3, 2, 6, 3, 6, 8, 3, 8, 9, 4, 9, 5, 2, 4, 11, 6, 2, 10, 8, 6, 7, 9, 8, 1];
 
 export class MeshBuilder {
-  constructor() { this.cap = 0; this.icap = 0; this.n = 0; this.ni = 0; this.w = [0, 0, 0, 0]; this.birth = -100; this.baseY = 0; this.grow(16384); }
+  constructor() { this.cap = 0; this.icap = 0; this.n = 0; this.ni = 0; this.w = [0, 0, 0, 0]; this.birth = -100; this.baseY = 0; this.dur = 1.6; this.grow(16384); }
   reset() { this.n = 0; this.ni = 0; }
   grow(cap) {
     const g = (T, k, old) => { const a = new T(cap * k); if (old) a.set(old); return a; };
     this.pos = g(Float32Array, 3, this.pos); this.nrm = g(Int8Array, 3, this.nrm); this.col = g(Uint8Array, 3, this.col);
-    this.uv = g(Float32Array, 2, this.uv); this.win = g(Uint8Array, 4, this.win); this.anim = g(Float32Array, 2, this.anim);
+    this.uv = g(Float32Array, 2, this.uv); this.win = g(Uint8Array, 4, this.win); this.anim = g(Float32Array, 3, this.anim);
     this.cap = cap;
   }
   growI(cap) { const a = new Uint32Array(cap); if (this.idx) a.set(this.idx); this.idx = a; this.icap = cap; }
@@ -43,7 +43,7 @@ export class MeshBuilder {
     let o = n * 3; this.pos[o] = x; this.pos[o + 1] = y; this.pos[o + 2] = z;
     this.nrm[o] = nx * 127; this.nrm[o + 1] = ny * 127; this.nrm[o + 2] = nz * 127;
     this.col[o] = c[0] > 255 ? 255 : c[0]; this.col[o + 1] = c[1] > 255 ? 255 : c[1]; this.col[o + 2] = c[2] > 255 ? 255 : c[2];
-    o = n * 2; this.uv[o] = u; this.uv[o + 1] = vv; this.anim[o] = this.birth; this.anim[o + 1] = this.baseY;
+    o = n * 2; this.uv[o] = u; this.uv[o + 1] = vv; o = n * 3; this.anim[o] = this.birth; this.anim[o + 1] = this.baseY; this.anim[o + 2] = this.dur;
     o = n * 4; const w = this.w; this.win[o] = w[0]; this.win[o + 1] = w[1]; this.win[o + 2] = w[2]; this.win[o + 3] = w[3];
     this.n = n + 1; return n;
   }
@@ -56,7 +56,7 @@ export class MeshBuilder {
     g.setAttribute('color', new THREE.BufferAttribute(this.col.slice(0, n * 3), 3, true));
     g.setAttribute('aUv', new THREE.BufferAttribute(this.uv.slice(0, n * 2), 2));
     g.setAttribute('aWin', new THREE.BufferAttribute(this.win.slice(0, n * 4), 4, true));
-    g.setAttribute('aAnim', new THREE.BufferAttribute(this.anim.slice(0, n * 2), 2));
+    g.setAttribute('aAnim', new THREE.BufferAttribute(this.anim.slice(0, n * 3), 3));
     g.setIndex(new THREE.BufferAttribute(this.idx.slice(0, this.ni), 1));
     g.computeBoundingSphere();
     return g;
@@ -182,16 +182,23 @@ function cornice(m, F, lx0, lz0, lx1, lz1, y, h, c, out = 0.35, top = null) { lb
 const FLOORS = { // [zone][level-1] = [min, max]
   1: [[2, 2], [3, 3]], 2: [[3, 5], [5, 8], [8, 13], [12, 19], [18, 30]], 3: [[1, 2], [2, 3]], 4: [[4, 7], [7, 12], [12, 20], [18, 28], [26, 38]],
   5: [[2, 4], [4, 7]], 6: [[6, 10], [10, 18], [18, 30], [30, 46], [46, 72]], 7: [[1, 1], [1, 2]], 8: [[1, 2], [2, 4], [3, 6]],
+  9: [[2, 4], [4, 8], [8, 16], [16, 30], [30, 58]], 10: [[1, 3], [3, 6], [6, 12], [10, 20]], 11: [[3, 5], [5, 9], [9, 16], [14, 26]], 12: [[1, 1], [1, 2], [2, 3]],
 };
-export const MAX_LEVEL = { 1: 2, 2: 5, 3: 2, 4: 5, 5: 2, 6: 5, 7: 2, 8: 3 };
+export const MAX_LEVEL = { 1: 2, 2: 5, 3: 2, 4: 5, 5: 2, 6: 5, 7: 2, 8: 3, 9: 5, 10: 4, 11: 4, 12: 3 };
+// hooks filled in by structures.js: special structures and per-building styles
+export const ext = { emitSpecial: null, styles: [], business: null };
+export const constructionTime = (h) => clamp(h * 0.16, 1.6, 18);
 const pickName = (r, a, b) => `${r.pick(a)} ${r.pick(b)}`;
 const N1 = ['Pacific', 'Golden Gate', 'Bay', 'Sutro', 'Mission', 'Portola', 'Sierra', 'Embarcadero', 'Presidio', 'Alta', 'Yerba Buena', 'Fillmore', 'Hyde', 'Larkin', 'Balboa', 'Noriega', 'Clement', 'Dolores', 'Valencia', 'Kearny', 'Montgomery', 'Sansome', 'Folsom', 'Brannan', 'Geary', 'Taraval', 'Irving', 'Judah', 'Castro', 'Hayes'];
 export function design(b) {
+  if (b.sp) return {};
   const r = rng(b.seed * 2654435761 + b.level * 97), z = b.zone, lv = clamp(b.level, 1, MAX_LEVEL[z]);
   const lotW = Math.min(b.w, b.d) * CELL, area = b.w * b.d * CELL * CELL;
   let [lo, hi] = FLOORS[z][lv - 1];
   let floors = r.int(lo, hi);
-  const fh = z === 6 ? r.range(3.5, 3.9) : z >= 7 ? r.range(4.2, 5.2) : z >= 3 ? r.range(3.4, 3.8) : r.range(3.0, 3.4);
+  const fh = z === 6 || z === 9 ? r.range(3.5, 3.9) : z === 7 || z === 8 || z === 12 ? r.range(4.2, 5.2) : z >= 3 ? r.range(3.4, 3.8) : r.range(3.0, 3.4);
+  if (b.st === 8 && lv >= 4) floors = Math.round(floors * 1.5); // megatowers of the future
+  if (b.fc) floors = Math.min(floors, Math.max(b.fc, lo > 6 ? 6 : 1));
   floors = Math.max(lo > 6 ? 6 : 1, Math.min(floors, Math.floor((lotW * 7.5) / fh))); // slenderness cap
   let variant = r.int(0, 99), label, cov = 0.7, per = 40;
   if (z === 1) {
@@ -204,6 +211,10 @@ export function design(b) {
   else if (z === 5) { label = floors <= 3 ? 'Office building' : 'Office block'; cov = 0.75; per = 30; }
   else if (z === 6) { label = floors <= 10 ? 'Office block' : floors <= 28 ? 'Art deco office tower' : 'Art deco skyscraper'; cov = floors > 28 ? 0.5 : floors > 12 ? 0.6 : 0.8; per = 30; }
   else if (z === 7) { label = variant < 50 ? 'Workshop' : 'Warehouse'; cov = 0.7; per = 90; }
+  else if (z === 9) { label = floors <= 4 ? 'Startup loft' : floors <= 12 ? 'Tech office' : floors <= 30 ? 'Tech tower' : 'Tech headquarters tower'; cov = floors > 28 ? 0.5 : 0.7; per = 22; }
+  else if (z === 10) { label = floors <= 3 ? 'Restaurants and galleries' : floors <= 8 ? 'Boutique hotel' : 'Resort hotel'; cov = 0.72; per = 46; }
+  else if (z === 11) { label = floors <= 6 ? 'Flats over shops' : 'Mixed-use block'; cov = 0.7; per = 60; }
+  else if (z === 12) { label = variant < 40 ? 'Pier shed' : variant < 75 ? 'Container yard' : 'Ship repair'; cov = 0.6; per = 110; floors = Math.min(floors, 3); }
   else { label = lv >= 2 && variant < 60 ? 'Mill' : 'Factory'; cov = 0.6; per = 80; floors = Math.min(floors, 6); }
   const fa = area * cov * floors, cap = Math.max(1, Math.round(fa / per));
   const nr = rng(b.seed + 77);
@@ -212,7 +223,11 @@ export function design(b) {
   else if (z === 4) name = pickName(nr, N1, floors > 7 ? ['Hotel', 'Plaza Hotel', 'Grand'] : ['Emporium', 'Department Store', 'Arcade']);
   else if (z === 6 && floors > 10) name = pickName(nr, N1, ['Building', 'Tower', 'Trust Building', 'Exchange', 'Mutual Building', 'Telephone Building']);
   else if (z === 8) name = pickName(nr, N1, ['Iron Works', 'Cannery', 'Sugar Refinery', 'Brewery', 'Foundry', 'Ship Supply']);
-  return { floors, fh, variant, label, name, res: z <= 2 ? cap : 0, jobs: z > 2 ? cap : 0, height: floors * fh + (z >= 3 && z <= 6 ? 1.2 : 0.4) };
+  else if (z === 9 && floors > 12) name = pickName(nr, N1, ['Labs', 'Systems', 'Center', 'Campus', 'Tower']);
+  else if (z === 10 && floors > 3) name = pickName(nr, N1, ['Inn', 'Hotel', 'Resort', 'House']);
+  if (ext.business && (z === 3 || z === 10 || z === 11) && !name) name = ext.business(b, nr) || '';
+  const mixed = z === 11;
+  return { floors, fh, variant, label, name, res: z <= 2 ? cap : mixed ? Math.round(cap * 0.82) : 0, jobs: z > 2 ? (mixed ? Math.max(1, Math.round(cap * 0.2)) : cap) : 0, height: floors * fh + (z >= 3 && z <= 6 ? 1.2 : 0.4) };
 }
 
 // ---- emitters ----------------------------------------------------------------------------------
@@ -415,17 +430,30 @@ function emitIndustry(m, F, b, s, r) {
 
 export function emitBuilding(m, b) {
   const F = frame(b), s = b, r = rng(b.seed * 40503 + b.level * 7 + 13);
-  m.birth = b.birth ?? -100; m.baseY = F.lo - 1.5;
-  b.baseY = F.baseY; b.topY = F.baseY + b.height;
+  m.birth = b.birth ?? -100; m.baseY = F.lo - 1.5; m.dur = m.birth > 0 ? constructionTime(b.height || 8) : 1.6;
+  b.baseY = F.baseY; b.topY = F.baseY + (b.height || 6);
+  if (b.sp) { if (ext.emitSpecial) ext.emitSpecial(m, F, b, r); m.dur = 1.6; return; }
+  const st = ext.styles[b.st | 0], n0 = m.n; let saved = null;
+  if (st && st.pal) { saved = {}; if (!st.fit) { st.fit = {}; for (const k in st.pal) { const src = st.pal[k], n = Math.max(src.length, P[k] ? P[k].length : 0); st.fit[k] = Array.from({ length: n }, (_, q) => src[q % src.length]); } } for (const k in st.pal) { saved[k] = P[k]; P[k] = st.fit[k]; } } // style palettes are cycled to the length the emitters index into
   switch (b.zone) {
-    case 1: return s.variant < 3 ? emitRowhouse(m, F, b, s, r) : emitHouse(m, F, b, s, r);
-    case 2: return emitApartment(m, F, b, s, r);
-    case 3: return emitShops(m, F, b, s, r);
-    case 4: return emitHotel(m, F, b, s, r);
-    case 5: case 6: return emitOffice(m, F, b, s, r);
-    default: return emitIndustry(m, F, b, s, r);
+    case 1: s.variant < 3 ? emitRowhouse(m, F, b, s, r) : emitHouse(m, F, b, s, r); break;
+    case 2: case 11: emitApartment(m, F, b, s, r); break;
+    case 3: emitShops(m, F, b, s, r); break;
+    case 4: emitHotel(m, F, b, s, r); break;
+    case 10: s.floors <= 3 ? emitShops(m, F, b, s, r) : emitHotel(m, F, b, s, r); break;
+    case 5: case 6: case 9: emitOffice(m, F, b, s, r); break;
+    default: emitIndustry(m, F, b, s, r);
   }
+  if (saved) for (const k in saved) P[k] = saved[k];
+  if (st && st.glass) for (let n = n0; n < m.n; n++) { // curtain walls: wide glass, no deco piers
+    const o = n * 4; if (m.win[o] > 3 && !(m.win[o + 2] & 8)) { m.win[o] = Math.max(m.win[o], st.glass * 255); m.win[o + 1] = Math.max(m.win[o + 1], 199); m.win[o + 2] &= ~16; }
+  }
+  if (b.vac) for (let n = n0; n < m.n; n++) { const o = n * 4; if (m.win[o] > 3) m.win[o + 2] = (m.win[o + 2] & ~3) | 3; } // vacant floors stay dark like a warehouse at night
+  if (st && st.extra) st.extra(m, F, b, r);
+  if (b.sign) ext.sign && ext.sign(m, F, b);
+  m.dur = 1.6;
 }
+export const prim = { box, roof, cyl, blob, tree, lbox, lroof, lcyl, ltree, cornice, roofClutter, frame, P, ST, hx, sh, mixc };
 
 // ---- material ----------------------------------------------------------------------------------
 export const buildingUniforms = { uTime: { value: 0 }, uNight: { value: 0 }, uLit: { value: new THREE.Vector4(0, 0, 0, 0) }, uSkyRefl: { value: new THREE.Color(0.5, 0.6, 0.7) } };
@@ -434,11 +462,11 @@ export function makeBuildingMaterial() {
   mat.onBeforeCompile = (shd) => {
     Object.assign(shd.uniforms, buildingUniforms);
     shd.vertexShader = shd.vertexShader.replace('#include <common>', `#include <common>
-      attribute vec2 aUv; attribute vec4 aWin; attribute vec2 aAnim; uniform float uTime; varying vec2 vUv2; varying vec4 vWin;`)
+      attribute vec2 aUv; attribute vec4 aWin; attribute vec3 aAnim; uniform float uTime; varying vec2 vUv2; varying vec4 vWin;`)
       .replace('#include <color_vertex>', '#include <color_vertex>\nvColor.rgb = pow(vColor.rgb, vec3(2.2));')
       .replace('#include <begin_vertex>', `#include <begin_vertex>
       vUv2 = aUv; vWin = aWin;
-      float gk = clamp((uTime - aAnim.x) / 1.6, 0.0, 1.0); gk = 1.0 - (1.0 - gk) * (1.0 - gk) * (1.0 - gk);
+      float gk = clamp((uTime - aAnim.x) / max(aAnim.z, 0.2), 0.0, 1.0); gk = 1.0 - (1.0 - gk) * (1.0 - gk);
       transformed.y = aAnim.y + (transformed.y - aAnim.y) * gk;`);
     shd.fragmentShader = shd.fragmentShader.replace('#include <common>', `#include <common>
       varying vec2 vUv2; varying vec4 vWin; uniform float uNight; uniform vec4 uLit; uniform vec3 uSkyRefl;
