@@ -10,7 +10,7 @@ import { city, nm, money, dateLabel, hoodName, hoodAt, bpos, sample, grid, OVERL
 import { tech, waveLabel } from './tech.js';
 import { culture, artistById, FAME, fameTier, ROOM, roomTier, venueRank, LEAGUES, quake, raceNow, setCircuit, olyUnlocked } from './culture.js';
 import { LINE_TYPES } from './life.js';
-import { costOf, parsePrompt, ERAS } from './place.js';
+import { costOf, parsePrompt, ERAS, turnStructure } from './place.js';
 import { PRESETS, PRESET_KEYS } from './presets.js';
 import { cloud, syncCode, setSyncCode, isPersisted } from './cloud.js';
 import { makePanels } from './panels.js';
@@ -28,6 +28,7 @@ export function makeUI(game) {
   function toast(msg, kind = '') {
     const box = $('toasts'); if ([...box.children].some((c) => c.textContent === msg)) return;
     const el = document.createElement('div'); el.className = `toast ${kind}`; el.textContent = msg; box.appendChild(el);
+    if (game.audio && (kind === 'gold' || kind === 'warn')) game.audio.cue(kind === 'gold' ? 'tier' : 'warn');
     while (box.children.length > 3) box.firstChild.remove();
     setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 420); }, kind === 'gold' ? 4200 : 2600);
   }
@@ -69,7 +70,10 @@ export function makeUI(game) {
         const c = CAT[t.buildKey];
         if (t.buildKey === 'circuit') h += `<div class="grp">${seg('circuitMode', t.circuitMode, [['prebuilt', 'Prebuilt', 'Click to drop a ready-made loop'], ['draw', 'Draw', 'Click each corner, then press Enter']])}${t.circuitDraft ? '<button class="btn sm" data-act="finish">Close the loop</button>' : ''}${culture.f1.pts ? '<button class="btn sm" data-act="race">Race now</button><button class="btn sm ghost" data-act="nocircuit">Remove</button>' : ''}</div>`;
         else if (c && c.rect) h += '<span class="hint">Drag a rectangle.</span>';
-        else if (c) h += `<div class="grp">${c.site ? '<button class="btn sm" data-act="site">Build at real site</button>' : ''}${c.fixed ? '' : '<button class="btn sm ghost" data-act="rot" title="Rotate (T)">Rotate</button>'}</div>`;
+        else if (c) {
+          const deg = Math.round((t.buildTurn * 180) / Math.PI);
+          h += `<div class="grp">${c.site ? '<button class="btn sm" data-act="site">Build at real site</button>' : ''}${c.fixed ? '' : `<button class="btn sm ghost" data-act="turn" data-v="-1" title="Turn left 15 degrees (Q)" aria-label="Turn left 15 degrees">Q</button><span class="hint" aria-live="polite">${deg ? `${deg > 0 ? '+' : ''}${deg}°` : '0°'}</span><button class="btn sm ghost" data-act="turn" data-v="1" title="Turn right 15 degrees (E)" aria-label="Turn right 15 degrees">E</button><button class="btn sm ghost" data-act="rot" title="Quarter turn (T)">Rotate</button><label class="check" title="Face the nearest street. Hold Shift to place freely."><input type="checkbox" id="buildSnap" ${t.buildSnap ? 'checked' : ''}/> Snap to street</label>`}</div>`;
+        }
       }
     } else if (t.tool === 'transit') {
       h = `<div class="grp">${seg('lineType', t.lineType, Object.entries(LINE_TYPES).map(([k, l]) => [k, l.name]))}</div>`;
@@ -88,6 +92,7 @@ export function makeUI(game) {
     if (a === 'zone') t.zoneId = +v;
     else if (a === 'buildCat') { t.buildCat = v; t.buildKey = v === 'fill' ? 'smartfill' : CATALOG.find((c) => c.cat === v && !c.hidden).k; }
     else if (a === 'rot') t.buildRot = (t.buildRot + 1) & 3;
+    else if (a === 'turn') { const st = Math.PI / 12; t.buildTurn = Math.round((t.buildTurn + +v * st) / st) * st; if (Math.abs(t.buildTurn) > Math.PI - 0.01) t.buildTurn = 0; game.tools.touch(); }
     else if (a === 'stampRot') { t.stampRot = (t.stampRot + 1) & 3; game.tools.touch(); return; }
     else if (a === 'noclip') t.clip = null;
     else if (a === 'site') { game.tools.siteBuild(t.buildKey); }
@@ -112,6 +117,7 @@ export function makeUI(game) {
     const t = T(), el = e.target;
     if (el.dataset.act) t[el.dataset.act] = el.checked;
     if (el.dataset.fill) t.fill.items[el.dataset.fill] = el.checked;
+    if (el.id === 'buildSnap') { t.buildSnap = el.checked; game.tools.touch(); }
     if (el.id === 'blockW') t.blockW = Math.min(400, Math.max(48, Math.round(+el.value / 8) * 8 || 96));
     if (el.id === 'blockH') t.blockH = Math.min(400, Math.max(48, Math.round(+el.value / 8) * 8 || 176));
     if (el.id === 'blockW' || el.id === 'blockH') el.value = el.id === 'blockW' ? t.blockW : t.blockH;
@@ -132,12 +138,20 @@ export function makeUI(game) {
   $('undoBtn').addEventListener('click', () => game.doUndo(false)); $('redoBtn').addEventListener('click', () => game.doUndo(true));
   document.querySelectorAll('.speed [data-speed]').forEach((b) => b.addEventListener('click', () => game.setSpeed(+b.dataset.speed)));
   const POPS = ['sunPop', 'wxPop', 'ovPop'];
-  document.querySelectorAll('[data-pop]').forEach((b) => b.addEventListener('click', () => { const id = b.dataset.pop, open = $(id).hidden; for (const p of POPS) { $(p).hidden = true; } document.querySelectorAll('[data-pop]').forEach((q) => q.setAttribute('aria-expanded', 'false')); if (open) { $(id).hidden = false; b.setAttribute('aria-expanded', 'true'); syncPops(); } }));
+  document.querySelectorAll('[data-pop]').forEach((b) => b.addEventListener('click', () => { const id = b.dataset.pop, open = $(id).hidden; for (const p of POPS) { $(p).hidden = true; } document.querySelectorAll('[data-pop]').forEach((q) => q.setAttribute('aria-expanded', 'false')); if (open) { $(id).hidden = false; b.setAttribute('aria-expanded', 'true'); syncPops(); } placeInfo(); }));
   $('hour').addEventListener('input', (e) => { game.setHour(+e.target.value); $('hourLbl').textContent = hhmm(game.viewHour()); });
   $('cycle').addEventListener('change', (e) => { game.fixedHour = game.viewHour(); game.cycle = e.target.checked; });
   $('ovList').innerHTML = OVERLAYS.map(([k, n]) => `<button role="radio" data-v="${k}" aria-checked="false">${n}</button>`).join('');
   $('ovList').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) { game.setOverlay(b.dataset.v); syncPops(); } });
+  function renderFind() {
+    const f = game.finder; if (!f) return;
+    $('findList').innerHTML = f.groups.map((g) => { const n = f.count(g.k); return `<button data-find="${g.k}" aria-pressed="${f.on.has(g.k)}"${n ? '' : ' disabled'}><i style="background:${g.color}"></i>${g.name}<em>${n}</em></button>`; }).join('');
+    $('findNav').hidden = !f.on.size; $('findPos').textContent = f.on.size ? `${f.hits.length} shown` : '';
+  }
+  $('findList').addEventListener('click', (e) => { const b = e.target.closest('[data-find]'); if (!b) return; game.finder.toggle(b.dataset.find); renderFind(); });
+  for (const [id, dir] of [['findNext', 1], ['findPrev', -1]]) $(id).addEventListener('click', () => { const r = game.finder.next(dir); if (r) $('findPos').textContent = `${r.index} of ${r.of}`; });
   function syncPops() {
+    renderFind();
     document.querySelectorAll('#ovList button').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.v === (game.overlay || 'none'))));
     document.querySelectorAll('#nightMode button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === (city.cfg.night === 'neon' ? 'neon' : 'real'))));
     const c = city.cfg; $('wxAuto').checked = c.wxAuto; $('wxFog').checked = c.fog; $('wxRain').checked = c.rain; $('wxSun').checked = c.sunsets; $('fogAmt').value = c.fogAmt; $('rainAmt').value = c.rainAmt;
@@ -178,7 +192,7 @@ export function makeUI(game) {
       const c = CAT[b.sp], v = culture.venues.find((q) => q.id === b.id), rows = [];
       if (b.jobs) rows.push(['Jobs', fmt(b.jobs)]); if (b.res) rows.push(['Residents', fmt(b.res)]); if (c.fx.cap) rows.push(['Capacity', fmt(c.fx.cap)]);
       rows.push(['Upkeep', `${money((c.per ? c.up * b.w * b.d : c.up))} a day`]); if (c.fx.amen) rows.push(['Raises land value within', `${Math.round(c.fx.amen[0])} m`]); if (c.fx.svc) rows.push(['Covers', `${Math.round(c.fx.svc[1])} m`]); if (c.fx.noise) rows.push(['Noise reaches', `${Math.round(c.fx.noise[0])} m`]);
-      rows.push(['Lot', `${b.w * CELL} by ${b.d * CELL} m`], ['Built', built]); if (hood) rows.push(['Neighborhood', esc(hood)]);
+      rows.push(['Lot', `${(b.yaw ? b.mw : b.w) * CELL} by ${(b.yaw ? b.md : b.d) * CELL} m${b.yaw ? `, turned ${Math.round(Math.abs(b.yaw) * 180 / Math.PI)}°` : ''}`], ['Built', built]); if (hood) rows.push(['Neighborhood', esc(hood)]);
       h += `<h2>${esc(v ? v.name : nm(c.name))}</h2><div class="kind"><span class="dot" style="background:#dcb466"></span>${v ? nm(c.name) + ' · ' : ''}${KIND[c.cat]}</div><dl>${rows.map((r) => `<dt>${r[0]}</dt><dd>${r[1]}</dd>`).join('')}</dl>`;
       if (v) {
         const rank = venueRank().findIndex((q) => q.id === v.id) + 1, tn = v.tonight;
@@ -200,13 +214,21 @@ export function makeUI(game) {
       </dl>
       ${game.readOnly ? '' : `<button class="btn" data-act="lock" aria-pressed="${!!b.locked}">${b.locked ? 'Historic: locked. Unlock' : 'Lock as historic'}</button>`}`;
     }
+    if (b.sp && b.mood) h += `<div class="sub mood ${b.mood.v > 0 ? 'up' : b.mood.v < 0 ? 'down' : ''}"><b>What people think</b><span>${esc(b.mood.text)}</span></div>`;
+    if (!game.readOnly && b.sp && !CAT[b.sp].fixed && !CAT[b.sp].rect) h += `<div class="row turn"><button class="btn sm ghost" data-act="turnB" data-v="-1" aria-label="Turn left 15 degrees">Turn left</button><button class="btn sm ghost" data-act="turnB" data-v="street">Face street</button><button class="btn sm ghost" data-act="turnB" data-v="1" aria-label="Turn right 15 degrees">Turn right</button></div>`;
     if (!game.readOnly) h += '<button class="btn" data-act="demolish">Demolish</button>';
-    el.innerHTML = h; el.hidden = false; icons();
+    el.innerHTML = h; el.hidden = false; icons(); placeInfo();
+  }
+  // details sit to the left of an open pop-over instead of covering it
+  function placeInfo() {
+    const el = $('info'), pop = POPS.map((p) => $(p)).find((p) => !p.hidden);
+    if (pop && innerWidth >= 760) { const r = pop.getBoundingClientRect(); el.style.right = `${Math.round(innerWidth - r.left + 8)}px`; el.style.top = `${Math.round(r.top)}px`; } else { el.style.right = ''; el.style.top = ''; }
   }
   $('info').addEventListener('click', (e) => {
     const b = buildings.get(infoId);
     if (e.target.closest('.close')) { T().selected = null; showInfo(null); game.tools.touch(); }
     else if (e.target.closest('[data-act="lock"]') && b) { if (b.locked) delete b.locked; else b.locked = true; showInfo(b); }
+    else if (e.target.closest('[data-act="turnB"]') && b) { const v = e.target.closest('[data-act="turnB"]').dataset.v, why = turnStructure(game, b, v === 'street' ? 'street' : +v); if (why) toast(why, 'warn'); else { const nb = buildings.get(b.id); T().selected = nb; showInfo(nb); game.tools.touch(); } }
     else if (e.target.closest('[data-act="demolish"]') && b) {
       game.undo.begin('bulldoze'); game.undo.logBuilding(removeBuilding(infoId)); game.undo.commit();
       T().selected = null; showInfo(null); game.tools.touch(); refresh();

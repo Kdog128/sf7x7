@@ -19,6 +19,8 @@ import { tech, initTech, resetTech, techDay, pulse } from './tech.js';
 import { culture, initCulture, resetCulture, cultureDay, stepCulture, stepTips, onAdded as cultureAdded, onRemoved as cultureRemoved } from './culture.js';
 import { makeLife } from './life.js';
 import { makeAudio } from './audio.js';
+import { makeMood } from './mood.js';
+import { makeFinder } from './finder.js';
 import { drawStreets, southHighway, ERAS } from './place.js';
 import { cloud } from './cloud.js';
 import { makePost } from './post.js';
@@ -110,6 +112,14 @@ game.undo = makeUndo(roads);
 game.ui = { toast() {}, refresh() {}, showInfo() {}, menuOpen: () => false, setHud() {}, resetTier() {}, syncPops() {}, tip() {} };
 game.life = { reset() {}, onAdded() {}, rebuildTransit() {}, setCircuit() {}, setQuality() {} };
 game.audio = makeAudio(game);
+game.finder = makeFinder(game);
+game.mood = makeMood(game); game.react = (b) => game.mood.react(b);
+{ // action sounds: every committed player action, plus undo, redo and toolbar buttons
+  const kindOf = (t) => t.label === 'road' ? 'road' : t.label === 'zone' ? 'zone' : t.label === 'bulldoze' ? 'bulldoze' : t.label === 'transit line' ? 'line' : t.label === 'remove line' ? 'bulldoze' : 'build';
+  game.undo.onAction = (t) => game.audio.cue(kindOf(t));
+  for (const k of ['undo', 'redo']) { const f = game.undo[k]; game.undo[k] = (...a) => { const r = f(...a); if (r) game.audio.cue(k); return r; }; }
+  document.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b && b.closest('#hud, #menu, #title')) game.audio.cue('ui'); }, true);
+}
 game.tools = makeTools(game);
 initCity(game); initTech(game); initCulture(game);
 game.life = makeLife(game);
@@ -152,7 +162,7 @@ function tick(dt) {
   buildingUniforms.uSkyRefl.value.copy(sky.zen).lerp(sky.hor, 0.5);
   { const neon = city.cfg.night === 'neon'; buildingUniforms.uGlow.value.set(neon ? 0.8 : 0.5, neon ? 3.0 : 1.5, neon ? 1.25 : 1.0); sky.neon = neon; }
   rRender.update(6); bRender.update(rig.target.x, rig.target.z, 7); flushOverlay();
-  game.life.update(dt, simDt); game.audio.update(dt);
+  game.life.update(dt, simDt); game.audio.update(dt); game.finder.update(dt);
   sky.update(camera, rig.target, rig.dist, game.clock); terrain.updateLOD(camera.position);
   if (game.overlay !== 'none') { ovAcc += dt; if (ovAcc > 1.5) { ovAcc = 0; paintOverlay(game.overlay); } }
   uiAcc += dt; if (uiAcc > 0.2) { uiAcc = 0; if (game.mode === 'play') game.ui.update(); }

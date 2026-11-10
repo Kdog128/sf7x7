@@ -12,7 +12,8 @@ import { clamp, smoothstep, rng } from './util.js';
 
 export const LC = 8, LW = Math.ceil(GX / LC), LH = Math.ceil(GZ / LC), LS = LC * CELL; // coarse cell = 64 m
 const N = LW * LH, f32 = () => new Float32Array(N);
-export const grid = { dens: f32(), act: f32(), noise: f32(), amen: f32(), edu: f32(), health: f32(), police: f32(), fire: f32(), transit: f32(), cap: f32(), traffic: f32(), lv: f32(), sat: f32(), water: f32(), isLand: new Uint8Array(N), hood: new Uint8Array(N) };
+export const moodFx = { list: null, wide: null };   // set by mood.js: resident reactions to new structures
+export const grid = { mood: f32(), dens: f32(), act: f32(), noise: f32(), amen: f32(), edu: f32(), health: f32(), police: f32(), fire: f32(), transit: f32(), cap: f32(), traffic: f32(), lv: f32(), sat: f32(), water: f32(), isLand: new Uint8Array(N), hood: new Uint8Array(N) };
 export const lidx = (x, z) => clamp(Math.floor((x - MAP.minX) / LS), 0, LW - 1) + clamp(Math.floor((z - MAP.minZ) / LS), 0, LH - 1) * LW;
 export const sample = (g, x, z) => g[lidx(x, z)];
 const bx = (b) => MAP.minX + (b.i + b.w / 2) * CELL, bz = (b) => MAP.minZ + (b.j + b.d / 2) * CELL;
@@ -36,7 +37,7 @@ const defaults = () => ({
   tax: { R: 9, C: 9, O: 9, I: 9 }, hoodTax: {}, subsidy: { R: false, C: false, O: false, I: false }, policies: {}, custom: [], taxEvents: [],
   sat: 0.6, lvAvg: 0.3, noiseAvg: 0, trafficAvg: 0, transitShare: 0, tourism: 0, rent: 0, heat: 0,
   hist: { pop: [], jobs: [], sat: [], lv: [], cash: [], traffic: [], heat: [] },
-  hoodNames: HOOD.names.slice(), hoodStats: [], lines: [], nextLine: 1, feed: [], wx: { fog: 0, rain: 0, tFog: 0, tRain: 0, manual: 0 },
+  hoodNames: HOOD.names.slice(), hoodStats: [], lines: [], nextLine: 1, feed: [], moods: [], wx: { fog: 0, rain: 0, tFog: 0, tRain: 0, manual: 0 },
 });
 export const city = defaults();
 export function resetCity2(keepCfg = true) { const cfg = city.cfg; Object.assign(city, defaults()); if (keepCfg) city.cfg = cfg; initHoods(); dirty = true; }
@@ -113,6 +114,10 @@ function stamp(g, x, z, r, s, add) {
     const v = s * (1 - (d / r) * (d / r)), c = j * LW + i; g[c] = add ? Math.min(1.5, g[c] + v) : Math.max(g[c], v);
   }
 }
+function stampAdd(g, x, z, r, s) { // signed, unclamped version of stamp
+  const i0 = Math.max(0, Math.floor((x - r - MAP.minX) / LS)), i1 = Math.min(LW - 1, Math.floor((x + r - MAP.minX) / LS)), j0 = Math.max(0, Math.floor((z - r - MAP.minZ) / LS)), j1 = Math.min(LH - 1, Math.floor((z + r - MAP.minZ) / LS));
+  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) { const d = Math.hypot(MAP.minX + (i + 0.5) * LS - x, MAP.minZ + (j + 0.5) * LS - z); if (d <= r) g[j * LW + i] += s * (1 - (d / r) * (d / r)); }
+}
 function blur(src, dst, rad) { // separable box blur
   for (let j = 0; j < LH; j++) { let s = 0; const row = j * LW; for (let i = -rad; i < LW; i++) { if (i + rad < LW) s += src[row + i + rad]; if (i - rad - 1 >= 0) s -= src[row + i - rad - 1]; if (i >= 0) tmp2[row + i] = s / (2 * rad + 1); } }
   for (let i = 0; i < LW; i++) { let s = 0; for (let j = -rad; j < LH; j++) { if (j + rad < LH) s += tmp2[(j + rad) * LW + i]; if (j - rad - 1 >= 0) s -= tmp2[(j - rad - 1) * LW + i]; if (j >= 0) dst[j * LW + i] = s / (2 * rad + 1); } }
@@ -148,7 +153,8 @@ export function recompute() {
   const simT = city.cfg.traffic === 'sim', useLv = city.cfg.landValue;
   let wSat = 0, wPop = 0, wLv = 0, wAct = 0, wTr = 0, wNoise = 0, wTransit = 0;
   const workers = stats.pop * 0.52, jobs = stats.jobsC + stats.jobsO + stats.jobsI, balance = workers > 50 ? clamp((jobs - workers) / workers, -1, 1) : 0;
-  const taxPain = ((city.tax.R - 9) * 0.012), cityWide = f.sat - Math.abs(balance) * 0.06 - taxPain - Math.max(0, city.heat) * Math.max(0, sim.demand.R) * 0.1 + (city.boost || 0);
+  const taxPain = ((city.tax.R - 9) * 0.012), cityWide = f.sat - Math.abs(balance) * 0.06 - taxPain - Math.max(0, city.heat) * Math.max(0, sim.demand.R) * 0.1 + (city.boost || 0) + (moodFx.wide ? moodFx.wide() : 0);
+  g.mood.fill(0); if (moodFx.list) for (const [x, z, r, v] of moodFx.list()) stampAdd(g.mood, x, z, r, v);
   const stats2 = city.hoodNames.map(() => ({ pop: 0, jobs: 0, sat: 0, lv: 0, w: 0, venues: 0 }));
   for (let c = 0; c < N; c++) {
     if (!g.isLand[c]) { g.lv[c] = 0; g.sat[c] = 0; g.traffic[c] = 0; continue; }
@@ -158,7 +164,7 @@ export function recompute() {
     g.traffic[c] = traffic;
     g.lv[c] = useLv ? clamp(0.18 + 0.3 * act + 0.22 * amen + 0.16 * svc + 0.12 * tr + g.water[c] - 0.3 * noise - (simT ? 0.12 * Math.min(1, traffic) : 0) + city.heat * 0.14, 0, 1) : 0.5;
     const ht = city.hoodTax[g.hood[c]] || 0;
-    g.sat[c] = clamp(0.52 + 0.24 * svc + 0.14 * amen + 0.1 * tr - 0.34 * noise - (simT ? 0.2 * Math.min(1, traffic) : 0) - ht * 0.015 + cityWide, 0, 1);
+    g.sat[c] = clamp(0.52 + 0.24 * svc + 0.14 * amen + 0.1 * tr - 0.34 * noise - (simT ? 0.2 * Math.min(1, traffic) : 0) - ht * 0.015 + cityWide + g.mood[c], 0, 1);
     const w = g.dens[c]; if (w > 0) { wSat += g.sat[c] * w; wPop += w; wLv += g.lv[c] * w; wTr += traffic * w; wNoise += noise * w; wTransit += Math.min(1, tr) * w; const h = stats2[g.hood[c]]; if (h) { h.sat += g.sat[c] * w; h.lv += g.lv[c] * w; h.w += w; } }
     wAct += act;
   }
@@ -233,12 +239,12 @@ export function paintOverlay(kind) {
 // ---- save ------------------------------------------------------------------------------------------
 export function serializeCity() {
   const rle = []; let v = grid.hood[0], n = 0; for (let c = 0; c < N; c++) { if (grid.hood[c] === v) n++; else { rle.push(v, n); v = grid.hood[c]; n = 1; } } rle.push(v, n);
-  const { cfg, treasury, tax, hoodTax, subsidy, policies, custom, taxEvents, hist, hoodNames, lines, nextLine, feed, heat: h } = city;
-  return { cfg, treasury: Math.round(treasury), tax, hoodTax, subsidy, policies, custom, taxEvents, hist, hoodNames, hoods: rle, lines, nextLine, feed: feed.slice(0, 40), heat: h };
+  const { cfg, treasury, tax, hoodTax, subsidy, policies, custom, taxEvents, hist, hoodNames, lines, nextLine, feed, heat: h, moods } = city;
+  return { cfg, treasury: Math.round(treasury), tax, hoodTax, subsidy, policies, custom, taxEvents, hist, hoodNames, hoods: rle, lines, nextLine, feed: feed.slice(0, 40), heat: h, moods: moods || [] };
 }
 export function loadCity(d) {
   resetCity2(false); if (!d) return;
-  for (const k of ['treasury', 'tax', 'hoodTax', 'subsidy', 'policies', 'custom', 'taxEvents', 'lines', 'nextLine', 'feed', 'heat']) if (d[k] != null) city[k] = d[k];
+  for (const k of ['treasury', 'tax', 'hoodTax', 'subsidy', 'policies', 'custom', 'taxEvents', 'lines', 'nextLine', 'feed', 'heat', 'moods']) if (d[k] != null) city[k] = d[k];
   if (d.cfg) Object.assign(city.cfg, d.cfg); if (d.hist) Object.assign(city.hist, d.hist);
   if (d.hoodNames) city.hoodNames = d.hoodNames;
   if (d.hoods) { let o = 0; for (let k = 0; k < d.hoods.length && o < N; k += 2) { grid.hood.fill(d.hoods[k], o, Math.min(N, o + d.hoods[k + 1])); o += d.hoods[k + 1]; } }

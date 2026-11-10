@@ -4,7 +4,7 @@ import { MAP, ll, heightAt, coastDist, lockedAt } from './terrain.js';
 import { GX, GZ, CELL, zone, land, road, buildings, toI, toJ, removeBuilding, refreshOverlay } from './world.js';
 import { sim, stepSim, refreshCells, spawn } from './sim.js';
 import { city, recompute } from './city.js';
-import { place, siteOf } from './place.js';
+import { place, siteOf, placeAtSite } from './place.js';
 import { CAT } from './structures.js';
 import { rng } from './util.js';
 
@@ -129,7 +129,7 @@ export function buildPreset(game, key) {
   }
 
   // landmarks at their real sites, then civic lots inside chosen blocks
-  const real = (k) => { const s = siteOf(k); if (!s) return; for (const [di, dj] of [[0, 0], [2, 0], [-2, 0], [0, 2], [0, -2], [4, 0], [-4, 0], [0, 4], [0, -4], [6, 0], [-6, 0]]) if (place(game, k, s.i + di, s.j + dj, s.w, s.d, s.front, { relaxed: true, quiet: true, free: true, now: -100 })) return; };
+  const real = (k) => { const s = siteOf(k); if (!s) return; if (placeAtSite(game, k, s, { quiet: true, free: true, now: -100 })) return; for (const [di, dj] of [[0, 0], [2, 0], [-2, 0], [0, 2], [0, -2], [4, 0], [-4, 0], [0, 4], [0, -4], [6, 0], [-6, 0]]) if (place(game, k, s.i + di, s.j + dj, s.w, s.d, s.front, { relaxed: true, quiet: true, free: true, now: -100 })) return; };
   real('ferry'); for (const k of P.landmarks || []) real(k);
   for (const [k, a, b, w, d] of P.lots || []) {
     // the chosen block first, then its neighbours; parks and plazas also shrink and move off a diagonal street

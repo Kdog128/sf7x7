@@ -147,7 +147,7 @@ export const TREE_COLORS = P.tree;
 
 // ---- lot frame: local (lx across the frontage, lz back from the street) -> world ----------------
 function frame(b) {
-  const wx = b.w * CELL, wz = b.d * CELL, x0 = MAP.minX + b.i * CELL, z0 = MAP.minZ + b.j * CELL, f = b.front & 3;
+  const wx = (b.yaw ? b.mw : b.w) * CELL, wz = (b.yaw ? b.md : b.d) * CELL, x0 = b.yaw ? b.cx - wx / 2 : MAP.minX + b.i * CELL, z0 = b.yaw ? b.cz - wz / 2 : MAP.minZ + b.j * CELL, f = b.front & 3;
   const cx = x0 + wx / 2, cz = z0 + wz / 2, W = f & 1 ? wz : wx, D = f & 1 ? wx : wz;
   const cs = [1, 0, -1, 0][f], sn = [0, 1, 0, -1][f];
   const X = (lx, lz) => cx + cs * (lx - W / 2) - sn * (lz - D / 2), Z = (lx, lz) => cz + sn * (lx - W / 2) + cs * (lz - D / 2);
@@ -478,7 +478,14 @@ export function emitBuilding(m, b) {
   const F = frame(b), s = b, r = rng(b.seed * 40503 + b.level * 7 + 13);
   m.birth = b.birth ?? -100; m.baseY = F.lo - 1.5; m.dur = m.birth > 0 ? constructionTime(b.height || 8) : 1.6;
   b.baseY = F.baseY; b.topY = F.baseY + (b.height || 6);
-  if (b.sp) { if (ext.emitSpecial) ext.emitSpecial(m, F, b, r); m.dur = 1.6; return; }
+  if (b.sp) {
+    const n0 = m.n; if (ext.emitSpecial) ext.emitSpecial(m, F, b, r); m.dur = 1.6;
+    if (b.yaw) { // turn the finished model about its centre
+      const c = Math.cos(b.yaw), sn = Math.sin(b.yaw), cx = b.cx, cz = b.cz, P = m.pos, N = m.nrm;
+      for (let n = n0; n < m.n; n++) { const o = n * 3, dx = P[o] - cx, dz = P[o + 2] - cz; P[o] = cx + c * dx - sn * dz; P[o + 2] = cz + sn * dx + c * dz; const nx = N[o], nz = N[o + 2]; N[o] = Math.round(c * nx - sn * nz); N[o + 2] = Math.round(sn * nx + c * nz); }
+    }
+    return;
+  }
   const st = ext.styles[b.st | 0], n0 = m.n; let saved = null;
   if (st && st.pal) { saved = {}; if (!st.fit) { st.fit = {}; for (const k in st.pal) { const src = st.pal[k], n = Math.max(src.length, P[k] ? P[k].length : 0); st.fit[k] = Array.from({ length: n }, (_, q) => src[q % src.length]); } } for (const k in st.pal) { saved[k] = P[k]; P[k] = st.fit[k]; } } // style palettes are cycled to the length the emitters index into
   if (!(ext.emit && ext.emit(m, F, b, s, r))) switch (b.zone) {

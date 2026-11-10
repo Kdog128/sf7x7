@@ -18,7 +18,7 @@ export function serialize(game) {
   const b = [];
   for (const B of buildings.values()) {
     const row = [B.id, B.i, B.j, B.w, B.d, B.zone, B.level, B.seed, B.front, B.born, B.locked ? 1 : 0, B.fc || 0, B.st || 0, B.sp || 0];
-    const x = {}; if (B.vac) { x.vac = 1; x.vacDay = B.vacDay; } if (B.sign) { x.sign = B.sign; x.name = B.name; } if (B.vname) x.vname = B.vname; if (Object.keys(x).length) row.push(x);
+    const x = {}; if (B.vac) { x.vac = 1; x.vacDay = B.vacDay; } if (B.sign) { x.sign = B.sign; x.name = B.name; } if (B.vname) x.vname = B.vname; if (B.mood) x.mood = B.mood; if (B.yaw) { x.yaw = +B.yaw.toFixed(4); x.mw = B.mw; x.md = B.md; x.cx = +B.cx.toFixed(2); x.cz = +B.cz.toFixed(2); } if (Object.keys(x).length) row.push(x);
     b.push(row);
   }
   const r = game.rig, t = []; for (const [o, h] of terra.edits) t.push(o, Math.round(h * 100) / 100);

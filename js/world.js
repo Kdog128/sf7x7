@@ -90,10 +90,28 @@ function tally(b, s) {
   stats.count += s;
 }
 // b: {id?, i, j, w, d, zone, level, seed, front, born, birth, res, jobs, ...design}
+// A turned structure keeps its model size (mw x md cells) and is turned by yaw radians about (cx, cz).
+// It owns the cells whose centres fall inside the turned rectangle; i, j, w, d is their bounding box.
+export function footCells(b) {
+  if (!b.yaw) { const out = []; for (let j = b.j; j < b.j + b.d; j++) for (let i = b.i; i < b.i + b.w; i++) out.push(j * GX + i); return out; }
+  const c = Math.cos(b.yaw), s = Math.sin(b.yaw), hw = (b.mw * CELL) / 2, hd = (b.md * CELL) / 2, out = [];
+  for (let j = b.j; j < b.j + b.d; j++) for (let i = b.i; i < b.i + b.w; i++) {
+    if (i < 0 || j < 0 || i >= GX || j >= GZ) continue;
+    const dx = MAP.minX + (i + 0.5) * CELL - b.cx, dz = MAP.minZ + (j + 0.5) * CELL - b.cz, u = c * dx + s * dz, v = -s * dx + c * dz;
+    if (Math.abs(u) <= hw && Math.abs(v) <= hd) out.push(j * GX + i);
+  }
+  return out;
+}
+export function turnBox(mw, md, cx, cz, yaw) { // bounding cells of a turned rectangle
+  const c = Math.abs(Math.cos(yaw)), s = Math.abs(Math.sin(yaw)), hx = ((mw * c + md * s) * CELL) / 2, hz = ((mw * s + md * c) * CELL) / 2;
+  const i0 = Math.floor((cx - hx - MAP.minX) / CELL), j0 = Math.floor((cz - hz - MAP.minZ) / CELL), i1 = Math.floor((cx + hx - MAP.minX) / CELL), j1 = Math.floor((cz + hz - MAP.minZ) / CELL);
+  return { i: i0, j: j0, w: i1 - i0 + 1, d: j1 - j0 + 1 };
+}
 export function addBuilding(b) {
   if (!b.id) b.id = state.nextId++;
   else if (b.id >= state.nextId) state.nextId = b.id + 1;
-  for (let j = b.j; j < b.j + b.d; j++) for (let i = b.i; i < b.i + b.w; i++) bid[j * GX + i] = b.id;
+  if (b.yaw) for (const o of footCells(b)) bid[o] = b.id;
+  else for (let j = b.j; j < b.j + b.d; j++) for (let i = b.i; i < b.i + b.w; i++) bid[j * GX + i] = b.id;
   buildings.set(b.id, b);
   b.chunk = chunkOf(b.i, b.j);
   chunkBuildings[b.chunk].add(b.id);

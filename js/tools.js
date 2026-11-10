@@ -5,7 +5,7 @@ import { CELL, GX, GZ, zone, road, bid, land, buildings, removeBuilding, refresh
 import { ROAD_TYPES, previewGeometry, cumLen, nearestOn } from './roads.js';
 import { clamp } from './util.js';
 import { CAT } from './structures.js';
-import { dimsOf, siteOf, checkPlace, place, smartFill, terraform, pier, costOf } from './place.js';
+import { dimsOf, siteOf, checkPlace, place, placeLot, placeAtSite, turnedLot, snapToStreet, smartFill, terraform, pier, costOf } from './place.js';
 import { city, markDirty, paintHood, money, canAfford, spend, priceIndex, nm } from './city.js';
 import { ignite, prebuiltCircuit, circuitOk, setCircuit, culture } from './culture.js';
 import { LINE_TYPES } from './life.js';
@@ -18,7 +18,7 @@ export function makeTools(game) {
   const T = {
     tool: 'inspect', roadType: 'street', roadMode: 'straight', zoneId: 1, zoneMode: 'brush', brush: 3,
     snapGrid: true, snapAngle: true, blockW: 96, blockH: 176, blocksX: 3, blocksZ: 3, stampRot: 0, clip: null, scroll: 'auto', chain: null, ctrl: null, selected: null, hover: null,
-    buildCat: 'park', buildKey: 'park', buildRot: 2, fill: { items: { tree: true, bench: true, lamp: true, planter: false, fountain: false, plaza: false }, density: 0.5, prompt: '' },
+    buildCat: 'park', buildKey: 'park', buildRot: 2, buildTurn: 0, buildSnap: true, fill: { items: { tree: true, bench: true, lamp: true, planter: false, fountain: false, plaza: false }, density: 0.5, prompt: '' },
     lineType: 'bus', lineDraft: null, terraMode: 'raise', terraSize: 90, lockMode: 'lock', disaster: 'fire', quakeMag: 6.5, circuitMode: 'prebuilt', circuitDraft: null, hoodId: 0, hoodSize: 160,
   };
   const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), keys = new Set();
@@ -59,8 +59,8 @@ export function makeTools(game) {
   const hlEdges = new THREE.LineSegments(new THREE.EdgesGeometry(hl.geometry), new THREE.LineBasicMaterial({ color: 0xf2e6c2 })); hl.add(hlEdges); scene.add(hl);
   function highlight(b, red = false) {
     if (!b) { hl.visible = false; return; }
-    const x0 = MAP.minX + b.i * CELL, z0 = MAP.minZ + b.j * CELL, w = b.w * CELL, d = b.d * CELL, y0 = b.baseY - 2, y1 = b.baseY + b.height + 2.5;
-    hl.position.set(x0 + w / 2, (y0 + y1) / 2, z0 + d / 2); hl.scale.set(w, y1 - y0, d); hl.visible = true;
+    const x0 = MAP.minX + b.i * CELL, z0 = MAP.minZ + b.j * CELL, w = (b.yaw ? b.mw : b.w) * CELL, d = (b.yaw ? b.md : b.d) * CELL, y0 = b.baseY - 2, y1 = b.baseY + b.height + 2.5;
+    hl.position.set(b.yaw ? b.cx : x0 + w / 2, (y0 + y1) / 2, b.yaw ? b.cz : z0 + d / 2); hl.scale.set(w, y1 - y0, d); hl.rotation.y = -(b.yaw || 0); hl.visible = true;
     boxMat.color.set(red ? 0xd2533c : 0xe9d9a8); hlEdges.material.color.set(red ? 0xf08a70 : 0xf2e6c2);
   }
 
@@ -301,7 +301,16 @@ export function makeTools(game) {
     if (T.tool === 'hood' && h) { terrainU.uPrevCol.value.set('#dcb466'); terrainU.uBrush.value.set(h.x, h.z, T.hoodSize, 1); }
   }
   // ---- structures ---------------------------------------------------------------------------------
-  function lotAt(h) { const c = CAT[T.buildKey]; if (!c || c.rect) return null; const [w, d] = dimsOf(T.buildKey, T.buildRot); return { i: toI(h.x) - (w >> 1), j: toJ(h.z) - (d >> 1), w, d, front: T.buildRot }; }
+  // A structure snaps to face the nearest street, set back from the kerb. Q and E turn it 15 degrees from there, T a quarter turn.
+  // Hold Shift to place it freely at the angle set with T, Q and E.
+  const FRONT_ANG = [-Math.PI / 2, 0, Math.PI / 2, Math.PI];
+  function lotAt(h) {
+    const k = T.buildKey, c = CAT[k]; if (!c || c.rect) return null;
+    if (!c.fixed && T.buildSnap && !keys.has('ShiftLeft') && !keys.has('ShiftRight')) { const L = snapToStreet(game, k, h.x, h.z, 70, T.buildTurn + (T.buildRot !== 2 ? (T.buildRot - 2) * Math.PI / 2 : 0)); if (L) { L.snapped = true; return L; } }
+    if (c.fixed) { const [w, d] = dimsOf(k, T.buildRot); return { i: toI(h.x) - (w >> 1), j: toJ(h.z) - (d >> 1), w, d, front: T.buildRot, yaw: 0 }; }
+    return turnedLot(k, h.x, h.z, FRONT_ANG[T.buildRot] + T.buildTurn);
+  }
+  const lotBad = (k, l) => checkPlace(k, l.i, l.j, l.w, l.d, false, l.yaw ? l.cells : null);
   function buildHover(h) {
     highlight(null); if (!h) return; const k = T.buildKey;
     if (k === 'smartfill' || (CAT[k] && CAT[k].rect)) {
@@ -310,10 +319,10 @@ export function makeTools(game) {
       else terrainU.uBrush.value.set(h.x, h.z, 6, 1); return;
     }
     if (k === 'circuit') { const pts = T.circuitMode === 'prebuilt' ? (streetLoop(h.x, h.z) || prebuiltCircuit(h.x, h.z)) : T.circuitDraft ? T.circuitDraft.concat([h.x, h.z]) : null; if (pts && pts.length >= 4) addPreview(T.circuitMode === 'prebuilt' ? pts.concat([pts[0], pts[1]]) : pts, 7, circuitOk(pts)); else terrainU.uBrush.value.set(h.x, h.z, 8, 1); return; }
-    const l = lotAt(h); if (!l) return; const c = CAT[k], bad = !!checkPlace(k, l.i, l.j, l.w, l.d);
-    const x0 = MAP.minX + l.i * CELL, z0 = MAP.minZ + l.j * CELL, w = l.w * CELL, d = l.d * CELL, y0 = Math.max(heightAt(x0 + w / 2, z0 + d / 2), 0) - 1, y1 = y0 + Math.min(c.h, 60) + 2;
-    hl.position.set(x0 + w / 2, (y0 + y1) / 2, z0 + d / 2); hl.scale.set(w, y1 - y0, d); hl.visible = true; boxMat.color.set(bad ? 0xd2533c : 0x8fc27a); hlEdges.material.color.set(bad ? 0xf08a70 : 0xc8e6b8);
-    const fx = [0, 1, 0, -1][l.front], fz = [-1, 0, 1, 0][l.front], cx = x0 + w / 2 + fx * (w / 2 + 3), cz = z0 + d / 2 + fz * (d / 2 + 3); addPreview([cx - fz * 4 - fx * 2, cz + fx * 4 - fz * 2, cx - fz * -4 - fx * 2, cz + fx * -4 - fz * 2], 1.5, !bad); // entrance side
+    const l = lotAt(h); if (!l) return; const c = CAT[k], bad = !!lotBad(k, l), yaw = l.yaw || 0;
+    const w = (yaw ? l.mw : l.w) * CELL, d = (yaw ? l.md : l.d) * CELL, mx = yaw ? l.cx : MAP.minX + l.i * CELL + w / 2, mz = yaw ? l.cz : MAP.minZ + l.j * CELL + d / 2, y0 = Math.max(heightAt(mx, mz), 0) - 1, y1 = y0 + Math.min(c.h, 60) + 2;
+    hl.position.set(mx, (y0 + y1) / 2, mz); hl.scale.set(w, y1 - y0, d); hl.rotation.y = -yaw; hl.visible = true; boxMat.color.set(bad ? 0xd2533c : 0x8fc27a); hlEdges.material.color.set(bad ? 0xf08a70 : 0xc8e6b8);
+    const cy = Math.cos(yaw), sy = Math.sin(yaw), f0x = [0, 1, 0, -1][l.front], f0z = [-1, 0, 1, 0][l.front], fx = cy * f0x - sy * f0z, fz = sy * f0x + cy * f0z, reach = ((l.front & 1 ? w : d) / 2) + 3, cx = mx + fx * reach, cz = mz + fz * reach; addPreview([cx - fz * 4 - fx * 2, cz + fx * 4 - fz * 2, cx - fz * -4 - fx * 2, cz + fx * -4 - fz * 2], 1.5, !bad); // entrance side
   }
   function buildClick(g) {
     const k = T.buildKey;
@@ -322,7 +331,7 @@ export function makeTools(game) {
       else { const d = T.circuitDraft || (T.circuitDraft = []); if (d.length >= 8 && Math.hypot(g.x - d[0], g.z - d[1]) < 60) return api.finish(); d.push(Math.round(g.x), Math.round(g.z)); }
       return;
     }
-    const l = lotAt(g); if (!l) return; undo.begin('build'); const b = place(game, k, l.i, l.j, l.w, l.d, l.front); undo.commit(); if (b && CAT[k].cat === 'landmark') game.ui.toast(`${nm(CAT[k].name)} built`, 'gold');
+    const l = lotAt(g); if (!l) return; undo.begin('build'); const b = placeLot(game, k, l); undo.commit(); if (b) { if (CAT[k].cat === 'landmark') game.ui.toast(`${nm(CAT[k].name)} built`, 'gold'); if (game.react) game.react(b); }
   }
   function buildRect(a, g) {
     const i0 = clamp(toI(Math.min(a.x, g.x)), 0, GX - 1), i1 = clamp(toI(Math.max(a.x, g.x)), 0, GX - 1), j0 = clamp(toJ(Math.min(a.z, g.z)), 0, GZ - 1), j1 = clamp(toJ(Math.max(a.z, g.z)), 0, GZ - 1);
@@ -463,20 +472,22 @@ export function makeTools(game) {
     if (e.code === 'Space') e.preventDefault();
     if (e.code === 'Escape') { if (T.chain) { T.chain = null; T.ctrl = null; } else if (T.tool === 'road' && T.roadMode === 'copy' && T.clip) { T.clip = null; game.ui.refresh(true); } else if (T.lineDraft || T.circuitDraft) { T.lineDraft = null; T.circuitDraft = null; } else if (T.selected) { T.selected = null; game.ui.showInfo(null); } else api.setTool('inspect'); hoverDirty = true; }
     const tool = { Digit1: 'inspect', Digit2: 'road', Digit3: 'zone', Digit4: 'bulldoze', Digit5: 'build', Digit6: 'transit', Digit7: 'terrain' }[e.code]; if (tool) api.setTool(tool);
-    if (e.code === 'KeyT' && T.tool === 'build') { T.buildRot = (T.buildRot + 1) & 3; hoverDirty = true; }
+    if (e.code === 'KeyT' && T.tool === 'build') { T.buildRot = (T.buildRot + 1) & 3; hoverDirty = true; game.ui.refresh(true); }
+    if ((e.code === 'KeyQ' || e.code === 'KeyE') && T.tool === 'build') { const st = Math.PI / 12; T.buildTurn = Math.round((T.buildTurn + (e.code === 'KeyE' ? st : -st)) / st) * st; if (Math.abs(T.buildTurn) > Math.PI - 0.01) T.buildTurn = 0; hoverDirty = true; game.ui.refresh(true); }
+    if (e.code.startsWith('Shift') && T.tool === 'build') hoverDirty = true;
     if (e.code === 'KeyT' && T.tool === 'road' && (T.roadMode === 'blocks' || T.roadMode === 'copy')) { T.stampRot = (T.stampRot + 1) & 3; hoverDirty = true; }
     if (e.code === 'Enter') api.finish();
     if (e.code === 'KeyH') game.ui.toggleHud && game.ui.toggleHud();
     if (e.code === 'KeyP') game.setSpeed(game.speed ? 0 : game.lastSpeed || 1);
   });
-  window.addEventListener('keyup', (e) => keys.delete(e.code));
+  window.addEventListener('keyup', (e) => { keys.delete(e.code); if (e.code.startsWith('Shift') && T.tool === 'build') hoverDirty = true; });
   window.addEventListener('blur', () => keys.clear());
 
   const api = {
     state: T,
     setTool(t) { if (game.readOnly) t = 'inspect'; if (T.lineDraft && T.lineDraft.length >= 4 && t !== 'transit') finishLine(); T.tool = t; T.chain = null; T.ctrl = null; T.lineDraft = null; T.circuitDraft = null; drag = null; hoverDirty = true; canvas.style.cursor = t === 'inspect' ? 'grab' : 'crosshair'; game.ui.refresh(); },
     finish() { if (T.tool === 'transit') finishLine(); else if (T.tool === 'build' && T.buildKey === 'circuit' && T.circuitDraft) { const d = T.circuitDraft; T.circuitDraft = null; if (d.length < 8) game.ui.toast('A circuit needs at least 4 corners', 'warn'); else if (!circuitOk(d)) game.ui.toast('The circuit needs dry land all the way round', 'warn'); else setCircuit(game.life.snapLoop(d, 60) || d); } hoverDirty = true; game.ui.refresh(true); },
-    removeLine, siteBuild(key) { const s = siteOf(key); if (!s) return null; undo.begin('build'); const b = place(game, key, s.i, s.j, s.w, s.d, s.front, { relaxed: true }); undo.commit(); if (b) { game.ui.toast(`${nm(CAT[key].name)} built at its real site`, 'gold'); rig.set(s.x, s.z, Math.max(700, CAT[key].h * 5), rig.gYaw, 0.5, false); } return b; },
+    removeLine, siteBuild(key) { const s = siteOf(key); if (!s) return null; undo.begin('build'); const b = placeAtSite(game, key, s); undo.commit(); if (b && game.react) game.react(b); if (b) { game.ui.toast(`${nm(CAT[key].name)} built at its real site`, 'gold'); rig.set(s.x, s.z, Math.max(700, CAT[key].h * 5), rig.gYaw, 0.5, false); } return b; },
     cancel() { T.chain = null; T.ctrl = null; hoverDirty = true; },
     touch() { hoverDirty = true; },
     update(dt) {

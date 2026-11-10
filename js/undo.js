@@ -1,7 +1,8 @@
 // Undo / redo for player actions (roads, zoning, bulldozing). Growth by the simulation is not undone.
-import { GX, zone, bid, road, buildings, addBuilding, removeBuilding, refreshOverlay, state as W } from './world.js';
+import { GX, zone, bid, road, buildings, addBuilding, removeBuilding, refreshOverlay, footCells, state as W } from './world.js';
 import { registerLoaded } from './sim.js';
 
+const fits = (b) => !buildings.has(b.id) && footCells(b).every((o) => !bid[o] && !road[o]);
 export function makeUndo(roads) {
   const stack = [], redoStack = [];
   let cur = null;
@@ -15,7 +16,7 @@ export function makeUndo(roads) {
     commit() {
       roads.log = null; const t = cur; cur = null;
       if (!t || (!t.roads.length && !t.zones.length && !t.blds.length && !t.added.length && !t.lines)) return false;
-      stack.push(t); if (stack.length > 100) stack.shift(); redoStack.length = 0; return true;
+      stack.push(t); if (stack.length > 100) stack.shift(); redoStack.length = 0; if (u.onAction) u.onAction(t); return true;
     },
     cancel() { roads.log = null; cur = null; },
     canUndo: () => stack.length > 0, canRedo: () => redoStack.length > 0,
@@ -28,8 +29,7 @@ export function makeUndo(roads) {
       for (let k = t.zones.length - 3; k >= 0; k -= 3) zone[t.zones[k]] = t.zones[k + 1];
       if (t.zones.length) { refreshOverlay(t.box[0], t.box[1], t.box[2], t.box[3]); W.hooks.cellsChanged(t.box[0] - 1, t.box[1] - 1, t.box[2] + 1, t.box[3] + 1); }
       for (const b of t.blds) {
-        let free = !buildings.has(b.id);
-        for (let j = b.j; j < b.j + b.d && free; j++) for (let i = b.i; i < b.i + b.w; i++) if (bid[j * GX + i] || road[j * GX + i]) { free = false; break; }
+        const free = fits(b);
         if (free) { const c = { ...b, birth: -100 }; delete c.fire; addBuilding(c); if (!c.sp) registerLoaded(c); }
       }
       redoStack.push(t); return t.label;
@@ -38,7 +38,7 @@ export function makeUndo(roads) {
       if (cur) u.commit();
       const t = redoStack.pop(); if (!t) return null;
       for (const b of t.blds) removeBuilding(b.id);
-      for (const b of t.added) { let free = !buildings.has(b.id); for (let j = b.j; j < b.j + b.d && free; j++) for (let i = b.i; i < b.i + b.w; i++) if (bid[j * GX + i] || road[j * GX + i]) { free = false; break; } if (free) { const c = { ...b, birth: -100 }; addBuilding(c); if (!c.sp) registerLoaded(c); } }
+      for (const b of t.added) { const free = fits(b); if (free) { const c = { ...b, birth: -100 }; addBuilding(c); if (!c.sp) registerLoaded(c); } }
       if (t.lines && u.setLines) u.setLines(t.lines[1]);
       for (const op of t.roads) { if (op.op === 'add') roads.addRaw(op.seg); else roads.removeRaw(op.seg.id); }
       for (let k = 0; k < t.zones.length; k += 3) zone[t.zones[k]] = t.zones[k + 2];

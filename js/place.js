@@ -1,6 +1,7 @@
 // Placing structures, Smart-fill auto-detail, terraforming and the starting street layouts.
 import { MAP, K, ll, sculpt, MAPMODE, heightAt } from './terrain.js';
-import { CELL, GX, GZ, zone, road, bid, land, buildings, addBuilding, inGrid, toI, toJ, updateLand, refreshOverlay, state as W } from './world.js';
+import { CELL, GX, GZ, zone, road, bid, land, buildings, addBuilding, inGrid, toI, toJ, updateLand, refreshOverlay, footCells, turnBox, removeBuilding, state as W } from './world.js';
+import { ROAD_TYPES } from './roads.js';
 import { lotBase } from './buildings.js';
 import { sim } from './sim.js';
 import { CAT } from './structures.js';
@@ -16,12 +17,41 @@ export function siteOf(key) { // real-world position of a landmark, as a lot
 }
 export function costOf(key, w, d) { const c = CAT[key]; return (c.per ? c.cost * w * d : c.cost) * priceIndex(); }
 // '' when the lot is free, otherwise the reason it is not
-export function checkPlace(key, i, j, w, d, relaxed = false) {
+// ---- turned lots and street snapping --------------------------------------------------------------
+const FRONT_ANG = [-Math.PI / 2, 0, Math.PI / 2, Math.PI];   // direction each front faces: north, east, south, west
+const wrap = (a) => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
+// A lot for `key` centred on (x, z), facing the street at angle `ang` (radians, atan2(z, x) of the way out the front door).
+export function turnedLot(key, x, z, ang) {
+  let front = 0, best = 9; for (let f = 0; f < 4; f++) { const d = Math.abs(wrap(ang - FRONT_ANG[f])); if (d < best) { best = d; front = f; } }
+  let yaw = wrap(ang - FRONT_ANG[front]); if (Math.abs(yaw) < 0.035) yaw = 0;
+  const [mw, md] = dimsOf(key, front);
+  if (!yaw || CAT[key].fixed || CAT[key].rect) { const i = Math.round((x - MAP.minX) / CELL - mw / 2), j = Math.round((z - MAP.minZ) / CELL - md / 2); return { i, j, w: mw, d: md, front, yaw: 0 }; }
+  const bb = turnBox(mw, md, x, z, yaw), L = { ...bb, front, yaw, mw, md, cx: x, cz: z };
+  L.cells = footCells(L); return L;
+}
+// Nearest street within `range`: the lot is turned to face it and set back from the kerb. Null when no street is close.
+export function snapToStreet(game, key, x, z, range = 70, extra = 0) {
+  const s = game.roads.nearestSeg(x, z, range); if (!s || s.seg.type === 'highway') return null;
+  const p = s.seg.pts, cu = s.seg.cum; let q = 0; while (q < cu.length - 2 && cu[q + 1] < s.s) q++;
+  const tx = p[q * 2 + 2] - p[q * 2], tz = p[q * 2 + 3] - p[q * 2 + 1], tl = Math.hypot(tx, tz) || 1;
+  let nx = -tz / tl, nz = tx / tl; if ((s.x - x) * nx + (s.z - z) * nz < 0) { nx = -nx; nz = -nz; }   // n: from the lot towards the street
+  const ang = Math.atan2(nz, nx) + extra, first = turnedLot(key, x, z, ang), deep = ((first.front & 1 ? CAT[key].w : CAT[key].d) * CELL) / 2;
+  const rt = ROAD_TYPES[s.seg.type]; let back = rt.half + rt.walk + deep + 1, L = null;
+  // step back from the kerb until the footprint clears the road cells (a turned lot crosses the road raster at its corners)
+  for (let k = 0; k < 8; k++, back += 3) { L = turnedLot(key, s.x - nx * back, s.z - nz * back, ang); const cells = L.cells || footCells(L); if (!cells.some((o) => road[o])) break; }
+  return L;
+}
+export function checkPlace(key, i, j, w, d, relaxed = false, cells = null) {
   const c = CAT[key]; if (!c) return 'Unknown structure';
   if (c.needs === 'olympics' && !olyUnlocked()) return 'Win the Olympic bid first';
   if (c.cat === 'landmark' && counters.has(key)) return `${nm(c.name)} is already built`;
   if (c.rect && c.min && (w < c.min || d < c.min)) return `Needs at least ${c.min * CELL} m on each side`;
   let n = 0, ok = 0;
+  if (cells) {
+    if (!cells.length) return 'Off the map';
+    for (const o of cells) { n++; if (bid[o]) return 'Something is already built here'; if (road[o]) return 'A road is in the way'; if (land[o]) ok++; }
+    return (relaxed ? ok < n * 0.45 : ok < n) ? (relaxed ? 'Not enough land here. Fill the shore first.' : 'Needs flat, dry land') : '';
+  }
   for (let b = j; b < j + d; b++) for (let a = i; a < i + w; a++) {
     if (!inGrid(a, b)) return 'Off the map'; const o = b * GX + a; n++;
     if (bid[o]) return 'Something is already built here'; if (road[o] && !c.fixed) return 'A road is in the way';
@@ -30,16 +60,52 @@ export function checkPlace(key, i, j, w, d, relaxed = false) {
   if (c.fixed) return ''; if (relaxed ? ok < n * 0.45 : ok < n) return relaxed ? 'Not enough land here. Fill the shore first.' : 'Needs flat, dry land';
   return '';
 }
-export function place(game, key, i, j, w, d, front, { relaxed = false, quiet = false, free = false, now = game.clock, seed } = {}) {
-  const c = CAT[key], why = checkPlace(key, i, j, w, d, relaxed); if (why) { if (!quiet) game.ui.toast(why, 'warn'); return null; }
+export function place(game, key, i, j, w, d, front, { relaxed = false, quiet = false, free = false, now = game.clock, seed, turn = null } = {}) {
+  if (turn && !turn.yaw) turn = null;
+  const c = CAT[key], why = checkPlace(key, i, j, w, d, relaxed, turn ? turn.cells : null); if (why) { if (!quiet) game.ui.toast(why, 'warn'); return null; }
   const cost = free ? 0 : costOf(key, w, d); if (!canAfford(cost)) { if (!quiet) game.ui.toast(`Not enough in the treasury (${money(cost)})`, 'warn'); return null; }
-  for (let b = j; b < j + d; b++) for (let a = i; a < i + w; a++) { const o = b * GX + a; if (zone[o]) { if (game.undo.current) game.undo.logZone(o, zone[o], 0); zone[o] = 0; } }
+  const clear = (o) => { if (zone[o]) { if (game.undo.current) game.undo.logZone(o, zone[o], 0); zone[o] = 0; } };
+  if (turn) for (const o of turn.cells) clear(o); else for (let b = j; b < j + d; b++) for (let a = i; a < i + w; a++) clear(b * GX + a);
   const b = { i, j, w, d, zone: 0, level: 1, seed: seed ?? Math.floor(Math.random() * 0x7fffffff), front, born: sim.day, birth: now, sp: key, height: c.h, jobs: c.jobs || 0, res: c.res || 0, label: c.name, floors: Math.max(1, Math.round(c.h / 4.2)) };
+  if (turn) Object.assign(b, { yaw: turn.yaw, mw: turn.mw, md: turn.md, cx: turn.cx, cz: turn.cz });
   if (c.green) b.green = true;
   b.baseY = lotBase(b); b.topY = b.baseY + b.height * 1.3 + 8;
   addBuilding(b); refreshOverlay(i, j, i + w - 1, j + d - 1); game.undo.logAdded(b); spend(cost); markDirty();
   return b;
 }
+
+// A landmark at its real site, turned to its street when one is close. Falls back to the plain grid lot.
+export function placeAtSite(game, key, s, opts = {}) {
+  const o = { relaxed: true, ...opts }, c = CAT[key];
+  if (!c.fixed) {
+    const L = snapToStreet(game, key, s.x, s.z, 140);
+    if (L) {
+      const b = placeLot(game, key, L, { ...o, quiet: true }); if (b) return b;
+      const ang = FRONT_ANG[L.front] + L.yaw, M = turnedLot(key, s.x, s.z, ang), b2 = placeLot(game, key, M, { ...o, quiet: true }); if (b2) return b2;
+    }
+  }
+  return place(game, key, s.i, s.j, s.w, s.d, s.front, o);
+}
+// Turn a structure that is already built: by 15 degree steps, or to face its nearest street. Keeps its id, so venues and teams stay linked.
+export function turnStructure(game, b, how) {
+  const c = b && CAT[b.sp]; if (!c || c.fixed || c.rect) return 'This one stays as it is';
+  const cx = b.yaw ? b.cx : MAP.minX + (b.i + b.w / 2) * CELL, cz = b.yaw ? b.cz : MAP.minZ + (b.j + b.d / 2) * CELL;
+  const L = how === 'street' ? snapToStreet(game, b.sp, cx, cz, 140) : turnedLot(b.sp, cx, cz, FRONT_ANG[b.front & 3] + (b.yaw || 0) + how * (Math.PI / 12));
+  if (!L) return 'No street close enough';
+  const nb = { ...b, i: L.i, j: L.j, w: L.w, d: L.d, front: L.front, birth: -100 }; delete nb.yaw; delete nb.mw; delete nb.md; delete nb.cx; delete nb.cz;
+  if (L.yaw) Object.assign(nb, { yaw: L.yaw, mw: L.mw, md: L.md, cx: L.cx, cz: L.cz });
+  removeBuilding(b.id);
+  const cells = footCells(nb); let ok = 0, why = cells.length ? '' : 'Off the map';
+  for (const o of cells) { if (bid[o]) { why = 'Something is already built there'; break; } if (road[o]) { why = 'A road is in the way'; break; } if (land[o]) ok++; }
+  if (!why && ok < cells.length * (c.site ? 0.45 : 1)) why = 'Needs flat, dry land';
+  if (why) { addBuilding(b); return why; }
+  game.undo.begin('build'); game.undo.logBuilding(b);
+  for (const o of cells) if (zone[o]) { game.undo.logZone(o, zone[o], 0); zone[o] = 0; }
+  nb.baseY = lotBase(nb); nb.topY = nb.baseY + nb.height * 1.3 + 8;
+  addBuilding(nb); game.undo.logAdded(nb); game.undo.commit(); markDirty();
+  return '';
+}
+export const placeLot = (game, key, L, opts = {}) => place(game, key, L.i, L.j, L.w, L.d, L.front, { ...opts, turn: L.yaw ? L : null });
 
 // ---- Smart-fill: dress an area with street furniture and planting ------------------------------------
 export function parsePrompt(text) {
