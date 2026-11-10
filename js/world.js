@@ -1,6 +1,6 @@
 // Grid state for the city: zoning, road occupancy, building registry and the overlay texture.
 import * as THREE from 'three';
-import { MAP, heightAt, coastDist } from './terrain.js';
+import { MAP, heightAt, coastDist, HAS_AREAS, areaAt, areaOpen } from './terrain.js';
 
 export const CELL = 8;
 export const GX = (MAP.maxX - MAP.minX) / CELL, GZ = (MAP.maxZ - MAP.minZ) / CELL;
@@ -43,11 +43,16 @@ export const inGrid = (i, j) => i >= 0 && j >= 0 && i < GX && j < GZ;
 // buildable: above the waterline with a little freeboard, and not a cliff
 function isLand(i, j) {
   const x = cellX(i) + CELL / 2, z = cellZ(j) + CELL / 2, h = heightAt(x, z);
-  if (h < 1.0) return 0;
+  if (h < 1.0 || (HAS_AREAS && !areaOpen(areaAt(x, z)))) return 0;
   const s = Math.max(Math.abs(heightAt(x + 8, z) - heightAt(x - 8, z)), Math.abs(heightAt(x, z + 8) - heightAt(x, z - 8))) / 16;
   return s < 0.55 && coastDist(x, z) > 6 ? 1 : 0;
 }
 export function initLand() { for (let j = 0; j < GZ; j++) for (let i = 0; i < GX; i++) land[j * GX + i] = isLand(i, j); }
+// an area opened (or a new city closed them again): re-evaluate every cell outside San Francisco
+export function refreshAreas() {
+  if (!HAS_AREAS) return;
+  for (let j = 0; j < GZ; j++) for (let i = 0; i < GX; i++) { if (!areaAt(cellX(i) + CELL / 2, cellZ(j) + CELL / 2)) continue; const o = j * GX + i, l = isLand(i, j); land[o] = l; if (!l && !bid[o]) zone[o] = 0; }
+}
 // after terraforming: re-evaluate a cell rectangle; empty zoning on cells that are no longer land is dropped
 export function updateLand(i0, j0, i1, j1) {
   i0 = Math.max(0, i0); j0 = Math.max(0, j0); i1 = Math.min(GX - 1, i1); j1 = Math.min(GZ - 1, j1);

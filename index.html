@@ -10,10 +10,10 @@
 <link rel="stylesheet" href="./style.css" />
 <script>
   // Map size is fixed for the life of the page, so it is read from the address before any module loads.
-  (function () { var m = new URLSearchParams(location.search).get('map'); globalThis.__MAP7 = m === 'compact' || m === 'bay' ? m : 'real'; })();
+  (function () { var m = new URLSearchParams(location.search).get('map'); globalThis.__MAP7 = m === 'compact' || m === 'real' ? m : 'region'; })();
 </script>
-<script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.183.0/build/three.module.js" } }</script>
-<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script type="importmap">{ "imports": { "three": "./vendor/three/three.module.min.js", "three/addons/": "./vendor/three/" } }</script>
+<script src="./vendor/lucide/lucide.min.js"></script>
 </head>
 <body>
 <canvas id="c" aria-label="City view" tabindex="0"></canvas>
@@ -41,6 +41,8 @@
         <label for="hour">Time of day <span class="num" id="hourLbl">10:00</span></label>
         <input type="range" id="hour" min="0" max="24" step="0.25" value="10" />
         <label class="check"><input type="checkbox" id="cycle" checked /> Day and night cycle</label>
+        <label>Night lights</label>
+        <div class="seg" id="nightMode" role="group" aria-label="Night lights"><button data-v="real" title="Amber street lamps and a soft glow">Realistic</button><button data-v="neon" title="Bloom, neon signs and bright traffic">Stylized</button></div>
       </div>
       <div class="pop-over" id="wxPop" hidden>
         <label class="check"><input type="checkbox" id="wxAuto" checked /> Weather changes by itself</label>

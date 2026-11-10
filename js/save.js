@@ -1,5 +1,5 @@
 // Save / load. Quick slots live in memory for this tab; cloud saves and files are the durable paths.
-import { MAP, MAPMODE, terra, setEdits } from './terrain.js';
+import { MAP, MAPMODE, terra, setEdits, areas } from './terrain.js';
 import { GX, GZ, CELL, zone, buildings, stats, refreshOverlay, addBuilding, updateLand, state as W } from './world.js';
 import { sim, refreshCells, registerLoaded } from './sim.js';
 import { design, lotBase } from './buildings.js';
@@ -9,7 +9,7 @@ import { serializeTech, loadTech, relinkTech } from './tech.js';
 import { serializeCulture, loadCulture } from './culture.js';
 
 export const slots = [{ name: 'Slot 1' }, { name: 'Slot 2' }, { name: 'Slot 3' }, { name: 'Autosave', auto: true }];
-export const MAP_NAMES = { real: 'Real-scale SF', compact: 'Compressed SF', bay: 'Bay Area' };
+export const MAP_NAMES = { region: 'SF and neighbors', real: 'Real-scale SF', compact: 'Compressed SF', bay: 'Bay Area (retired)' };
 
 export function serialize(game) {
   const rle = []; let v = zone[0], n = 0;
@@ -25,7 +25,7 @@ export function serialize(game) {
   return {
     app: '7x7', v: 2, map: MAPMODE, savedAt: new Date().toISOString(), grid: [GX, GZ], day: sim.day, time: +sim.time.toFixed(3), growth: sim.growth, speed: game.speed, year0: sim.year0,
     pop: stats.pop, cam: [Math.round(r.gTarget.x), Math.round(r.gTarget.z), Math.round(r.gDist), +r.gYaw.toFixed(3), +r.gPitch.toFixed(3)],
-    roads: game.roads.serialize(), zones: rle, buildings: b, nextId: W.nextId, terra: t, city: serializeCity(), tech: serializeTech(), culture: serializeCulture(),
+    areas: { open: [...areas.open], all: areas.all }, roads: game.roads.serialize(), zones: rle, buildings: b, nextId: W.nextId, terra: t, city: serializeCity(), tech: serializeTech(), culture: serializeCulture(),
   };
 }
 export const metaOf = (d) => ({ day: d.day, year: d.year0 + Math.floor((d.day - 1) / 4), pop: d.pop, map: d.map, v: d.v });
@@ -33,9 +33,11 @@ export const metaOf = (d) => ({ day: d.day, year: d.year0 + Math.floor((d.day - 
 export function deserialize(game, data) {
   if (!data || data.app !== '7x7' || !Array.isArray(data.roads) || !Array.isArray(data.zones)) throw new Error('This file is not a 7x7 city');
   const map = data.map || 'real';
+  if (map === 'bay') throw new Error('This city was built on the old Bay Area map, which has been replaced by SF and neighbors. It cannot be loaded.');
   if (map !== MAPMODE) { const e = new Error(`This city was built on the ${MAP_NAMES[map] || map} map. Start a new city on that map size, then load it.`); e.map = map; throw e; }
   if (!data.grid || data.grid[0] !== GX || data.grid[1] !== GZ) throw new Error('This save uses a different map size');
   game.resetCity();
+  if (data.areas) game.setAreas(data.areas.open || [], data.areas.all);
   if (data.terra && data.terra.length) { const bb = setEdits(data.terra); if (bb) { const G = MAP.G / CELL; updateLand(Math.floor(bb[0] * G) - 2, Math.floor(bb[1] * G) - 2, Math.ceil(bb[2] * G) + 2, Math.ceil(bb[3] * G) + 2); } }
   for (const s of data.roads) game.roads.addRaw({ type: s.t, pts: s.p }, false);
   game.roads.rasterRegion(0, 0, GX - 1, GZ - 1);

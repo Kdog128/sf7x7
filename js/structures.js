@@ -6,7 +6,7 @@ import { roadY } from './roads.js';
 import { rng } from './util.js';
 
 const { lbox, lroof, lcyl, ltree, cornice, P, ST, hx, sh, mixc } = prim;
-const GLOW = { bay: 1, fh: 1, base: 0, ww: 0, wh: 0, style: 64, seed: 0 };
+const GLOW = { bay: 1, fh: 1, base: 0, ww: 0, wh: 0, style: 32, seed: 0 };
 const win = (b, F, bay, fh, ww, wh, style, base) => ({ bay, fh, base: base ?? F.baseY, ww, wh, style, seed: b.seed & 255 });
 const C = {
   stone: hx('#b3ab98'), white: hx('#d6d2c6'), brick: hx('#8a5d4e'), dark: hx('#3a3836'), roof: hx('#4c4945'), conc: hx('#a29e94'), steel: hx('#7d8488'),
@@ -245,6 +245,10 @@ function emitBridge(m, cfg) {
     let w = 3.6; for (let k = 0; k < 4; k++) { prim.box(m, x - w, z - w, x + w, z + w, 6 + ((Ht - 6) * k) / 4, 6 + ((Ht - 6) * (k + 1)) / 4, c, k === 3 ? c : null); w *= 0.86; }
   }
   for (const t of cfg.towers) for (let k = 1; k <= 4; k++) { const y = deck(t) + 8 + ((Ht - deck(t) - 14) * k) / 4, a = at(t, -hw), b2 = at(t, hw); beam(m, a[0], y, a[1], b2[0], y, b2[1], 3.2, k === 4 ? 6 : 3.4, c); }
+  // roadway lamps down both sides and a red beacon on each tower, so the span reads at night
+  { const lamp = hx('#ffd9a0'), red = hx('#ff4a3a'), nl = Math.max(8, Math.round(L / 55));
+    for (let k = 1; k < nl; k++) for (const o of [-hw + 1.5, hw - 1.5]) { const t = k / nl, [x, z] = at(t, o), yd = deck(t); prim.box(m, x - 0.25, z - 0.25, x + 0.25, z + 0.25, yd, yd + 7, c, null); prim.box(m, x - 0.7, z - 0.7, x + 0.7, z + 0.7, yd + 7, yd + 8.1, lamp, lamp, GLOW); }
+    for (const t of cfg.towers) for (const o of [-hw, hw]) { const [x, z] = at(t, o); prim.box(m, x - 0.9, z - 0.9, x + 0.9, z + 0.9, Ht, Ht + 1.8, red, red, GLOW); } }
   for (let s = 0; s + 1 < sup.length; s++) {
     const [t0, y0] = sup[s], [t1, y1] = sup[s + 1], n = Math.max(6, Math.round(((t1 - t0) * L) / 45)), low = Math.min(deck((t0 + t1) / 2) + 5, Math.min(y0, y1));
     const cy = (u) => { const lin = y0 + (y1 - y0) * u, sag = (lin - low) * 4 * u * (1 - u) * (Math.min(y0, y1) > low + 1 ? 1 : 0); return lin - sag * (y0 !== y1 && (s === 0 || s === sup.length - 2) ? 0.55 : 1); };
@@ -280,13 +284,13 @@ export const CATALOG = [
   S('fire', 'Fire station', 'service', 4, 5, 20, 140, 8, 60, { svc: ['fire', 850] }),
   S('goldengate', 'Golden Gate Bridge', 'landmark', 3, 3, 30, 3500, 20, 40, { tour: 10, amen: [900, 0.6] }, { site: [-122.4777, 37.8068], fixed: true, parody: 'Golden Great Bridge' }),
   S('baybridge', 'Bay Bridge', 'landmark', 3, 3, 30, 3000, 20, 40, { tour: 5, amen: [600, 0.3] }, { site: [-122.3893, 37.7866], fixed: true, parody: 'Bae Bridge' }),
-  S('transamerica', 'Transamerica Pyramid', 'landmark', 6, 6, 262, 1500, 10, 1500, { tour: 6, amen: [500, 0.45] }, { site: [-122.4027, 37.7952], parody: 'Transpacifica Pyramid' }),
-  S('salesforce', 'Salesforce Tower', 'landmark', 7, 7, 330, 2200, 14, 6000, { tour: 4, amen: [500, 0.4] }, { site: [-122.3970, 37.7897], parody: 'Salesfarce Tower' }),
+  S('transamerica', 'Transamerica Pyramid', 'landmark', 6, 6, 260, 1500, 10, 1500, { tour: 6, amen: [500, 0.45] }, { site: [-122.4027, 37.7952], parody: 'Transpacifica Pyramid' }),
+  S('salesforce', 'Salesforce Tower', 'landmark', 7, 7, 326, 2200, 14, 6000, { tour: 4, amen: [500, 0.4] }, { site: [-122.3970, 37.7897], parody: 'Salesfarce Tower' }),
   S('paintedladies', 'Painted Ladies', 'landmark', 7, 3, 16, 300, 1, 0, { tour: 5, amen: [350, 0.5] }, { site: [-122.4330, 37.7763], res: 40, parody: 'Tinted Ladies' }),
-  S('coit', 'Coit Tower', 'landmark', 4, 4, 66, 350, 2, 12, { tour: 5, amen: [450, 0.5] }, { site: [-122.4058, 37.8024], parody: 'Quoit Tower' }),
+  S('coit', 'Coit Tower', 'landmark', 4, 4, 64, 350, 2, 12, { tour: 5, amen: [450, 0.5] }, { site: [-122.4058, 37.8024], parody: 'Quoit Tower' }),
   S('alcatraz', 'Alcatraz', 'landmark', 10, 6, 30, 500, 4, 60, { tour: 9, amen: [300, 0.2] }, { site: [-122.4230, 37.8267], parody: 'Alcatrash' }),
   S('palace', 'Palace of Fine Arts', 'landmark', 9, 9, 45, 700, 4, 30, { tour: 6, amen: [500, 0.6] }, { site: [-122.4484, 37.8029], green: true, parody: 'Palace of Fine Farts' }),
-  S('ferry', 'Ferry Building', 'landmark', 14, 3, 80, 800, 5, 400, { tour: 7, amen: [500, 0.5] }, { site: [-122.3937, 37.7955], parody: 'Fairy Building' }),
+  S('ferry', 'Ferry Building', 'landmark', 14, 3, 75, 800, 5, 400, { tour: 7, amen: [500, 0.5] }, { site: [-122.3937, 37.7955], parody: 'Fairy Building' }),
   S('ghirardelli', 'Ghirardelli Square', 'landmark', 8, 6, 34, 600, 4, 300, { tour: 6, amen: [400, 0.45] }, { site: [-122.4226, 37.8058], parody: 'Girardeli Square' }),
   S('conservatory', 'Conservatory of Flowers', 'landmark', 8, 4, 22, 400, 3, 20, { tour: 4, amen: [450, 0.6] }, { site: [-122.4602, 37.7726], green: true, parody: 'Conservatory of Showers' }),
   S('oracle', 'Oracle Park', 'landmark', 22, 22, 44, 2400, 30, 800, { tour: 6, cap: 41000, noise: [520, 0.35], league: 'MLB' }, { site: [-122.3893, 37.7786], parody: 'Oracular Park' }),
@@ -306,7 +310,11 @@ export const CATALOG = [
 ];
 export const CAT = Object.fromEntries(CATALOG.map((c) => [c.k, c]));
 export const CATS = [['park', 'Parks and decor'], ['service', 'Services'], ['landmark', 'Landmarks'], ['night', 'Nightlife'], ['sport', 'Sports']];
-ext.emitSpecial = (m, F, b, r) => { const e = E[b.sp]; if (e) e(m, F, b, r); };
+ext.emitSpecial = (m, F, b, r) => {
+  const e = E[b.sp]; if (!e) return; const n0 = m.n; e(m, F, b, r);
+  // landmarks, venues and stadiums are floodlit at night: every plain surface that is not foliage or already self-lit
+  const c = CAT[b.sp]; if (c && (c.cat === 'landmark' || c.cat === 'night' || c.cat === 'sport')) for (let n = n0; n < m.n; n++) { const o = n * 4; if (m.win[o] <= 3 && !(m.win[o + 2] & 96) && m.win[o + 3] !== 255) m.win[o + 2] |= 64; }
+};
 ext.sign = (m, F, b) => { const y = b.baseY + b.height, c = b.sign; lbox(m, F, F.W * 0.22, 1.4, F.W * 0.78, 2.2, y, y + Math.min(5, 1.5 + b.height * 0.03), c, sh(c, 0.7), GLOW); };
 
 // ---- styles by era and neighbourhood ---------------------------------------------------------------
@@ -323,7 +331,7 @@ function eaves(m, F, b) { // flared green eaves, Chinatown style
 ext.styles = [
   null,
   { name: 'Victorian', pal: pal({ house: ['#b9a6c0', '#9db5b0', '#c9b37a', '#b58a7a', '#8fa6bd', '#c7c1ae', '#a7b38f', '#bfa0a0', '#d0c8b4'] }) },
-  { name: 'Stucco', pal: pal({ house: ['#d6cdb8', '#c9d0c2', '#d9c7b0', '#c2ccd2', '#e0d6c3', '#cfc1b4', '#d8d3c8', '#d2c6c0'], brick: ['#cfc4ae', '#c4b8a6', '#d8cdb8'] }) },
+  { name: 'Stucco', pal: pal({ house: ['#e0d2b4', '#c4d3c0', '#e2c3a8', '#bccfd8', '#e6dcc6', '#d9b9b0', '#d8d3c8', '#e3d08f', '#c9c0d6', '#b8d0c4', '#ecdcc8', '#d6c4a4'], brick: ['#cfc4ae', '#c4b8a6', '#d8cdb8'] }) },
   { name: 'Chinatown', pal: pal({ awning: ['#9c2f2a', '#b8892c', '#2f6b4a', '#8a2a26'], brick: ['#8e4a3c', '#7d3f35', '#a0604a', '#94503e'], crown: ['#2f6b4a', '#9c2f2a', '#b8892c'] }), extra: eaves },
   { name: 'Mission', pal: pal({ house: ['#d2b48c', '#c8a878', '#b98f6f', '#d8c4a0', '#a8c0b0', '#c7a0a0', '#d0b070'], awning: ['#b4563c', '#d0a23c', '#3f7f8c', '#5f8f4f'] }), extra: mural },
   { name: 'North Beach', pal: pal({ house: ['#d9d0bc', '#cfc6b2', '#e0d8c8', '#c8bfa8'], awning: ['#7a2f2a', '#2f5a3f', '#d8d0bc', '#8a3a30'], stone: ['#cfc6b2', '#d6cebb', '#c4baa4'] }) },

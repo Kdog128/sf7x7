@@ -5,21 +5,22 @@ import { clamp, lerp, smoothstep } from './util.js';
 const col = (h) => new THREE.Color(h);
 // keyed on sun height (sin of elevation)
 const KEYS = [
-  { s: -0.30, zen: col('#080c18'), hor: col('#1a2233'), sun: col('#8ea4cc'), si: 1.1, hemiS: col('#6478a4'), hemiG: col('#45423d'), hi: 2.3 },
-  { s: -0.08, zen: col('#1c2947'), hor: col('#4b4a63'), sun: col('#8ea4cc'), si: 0.6, hemiS: col('#6a769c'), hemiG: col('#45423d'), hi: 1.9 },
-  { s: 0.02, zen: col('#3f5683'), hor: col('#d79a78'), sun: col('#ff9d5c'), si: 0.9, hemiS: col('#a39cb0'), hemiG: col('#4a433c'), hi: 1.25 },
-  { s: 0.14, zen: col('#5a7cab'), hor: col('#e6c6a3'), sun: col('#ffc890'), si: 2.2, hemiS: col('#c6ccd8'), hemiG: col('#787062'), hi: 1.75 },
-  { s: 0.40, zen: col('#6a8fbd'), hor: col('#cdd5d8'), sun: col('#fff1dc'), si: 2.7, hemiS: col('#d3dde8'), hemiG: col('#857e6e'), hi: 1.7 },
-  { s: 1.00, zen: col('#6c93c4'), hor: col('#c6d1d8'), sun: col('#fff6e8'), si: 2.9, hemiS: col('#d6e0ec'), hemiG: col('#8a8372'), hi: 1.8 },
+  { s: -0.30, zen: col('#080c18'), hor: col('#1a2233'), sun: col('#8ea4cc'), si: 1.1, hemiS: col('#6478a4'), hemiG: col('#57483a'), hi: 2.3 },
+  { s: -0.08, zen: col('#1c2947'), hor: col('#4b4a63'), sun: col('#8ea4cc'), si: 0.6, hemiS: col('#6a769c'), hemiG: col('#57483a'), hi: 1.9 },
+  { s: 0.02, zen: col('#3f5683'), hor: col('#dfa07a'), sun: col('#ff9a58'), si: 1.0, hemiS: col('#a89cab'), hemiG: col('#54463a'), hi: 1.3 },
+  { s: 0.14, zen: col('#5a7cab'), hor: col('#ecc9a0'), sun: col('#ffbf82'), si: 2.5, hemiS: col('#cfc9cc'), hemiG: col('#85745f'), hi: 1.75 },
+  { s: 0.40, zen: col('#6a8fbd'), hor: col('#d3d6d2'), sun: col('#ffe9c8'), si: 2.9, hemiS: col('#d6dde4'), hemiG: col('#93866f'), hi: 1.7 },
+  { s: 1.00, zen: col('#6c93c4'), hor: col('#c9d2d6'), sun: col('#fff1dc'), si: 3.0, hemiS: col('#d6e0ec'), hemiG: col('#978b74'), hi: 1.8 },
 ];
 
 const SUNSET_HOR = col('#ff7f47'), SUNSET_ZEN = col('#7a4f8f'), SUNSET_SUN = col('#ff7a3d'), GREY = new THREE.Color();
+const CITY_GLOW = col('#5a4030'), NEON_ZEN = col('#1b1340'), NEON_HOR = col('#5c3266');
 
 export class Sky {
   constructor(scene, renderer) {
     this.scene = scene;
     this.sunDir = new THREE.Vector3(0, 1, 0); this.lightDir = new THREE.Vector3(0, 1, 0);
-    this.zen = new THREE.Color(); this.hor = new THREE.Color(); this.night = 0; this.sunH = 1;
+    this.zen = new THREE.Color(); this.hor = new THREE.Color(); this.night = 0; this.sunH = 1; this.golden = 0; this.neon = false;
     this.wx = { fog: 0, rain: 0, sunset: 0.5 }; // weather: fog and rain grey the light, sunset tints the low sun
     this.sun = new THREE.DirectionalLight(0xffffff, 3);
     this.sun.castShadow = true; this.sun.shadow.mapSize.set(2048, 2048);
@@ -102,6 +103,11 @@ export class Sky {
       }
     }
     this.night = 1 - smoothstep(-0.12, 0.1, s);
+    this.golden = smoothstep(-0.05, 0.08, s) * (1 - smoothstep(0.18, 0.42, s));
+    { // the city lights the haze above it: a warm horizon at night, or violet in the stylized night
+      const k = this.night * (1 - Math.min(1, this.wx.fog * 0.6 + this.wx.rain * 0.5));
+      if (this.neon) { this.zen.lerp(NEON_ZEN, 0.55 * k); this.hor.lerp(NEON_HOR, 0.42 * k); } else this.hor.lerp(CITY_GLOW, 0.3 * k);
+    }
     // below the horizon the moon takes over as the key light
     if (s > -0.03) this.lightDir.copy(this.sunDir); else this.lightDir.set(-this.sunDir.x * 0.6, 0.55 + 0.3 * -s, -this.sunDir.z * 0.6 - 0.3).normalize();
     if (this.lightDir.y < 0.09) { this.lightDir.y = 0.09; this.lightDir.normalize(); }
@@ -113,7 +119,7 @@ export class Sky {
 
   // Keep the shadow frustum centred on what the camera looks at.
   update(camera, target, dist, time) {
-    const fogD = Math.min(0.000042, 0.42 / Math.max(dist, 1)) + this.wx.fog * Math.min(0.004, 0.5 / Math.max(dist, 100)) + this.wx.rain * 0.00006;
+    const fogD = Math.min(0.00006, 0.5 / Math.max(dist, 1)) * (1 + 0.9 * (this.golden || 0)) + this.wx.fog * Math.min(0.004, 0.5 / Math.max(dist, 100)) + this.wx.rain * 0.00006;
     this.scene.fog.density = fogD; this.waterU.uFogD.value = fogD; this.waterU.uTime.value = time;
     const S = clamp(dist * 0.85, 220, 4200), cam = this.sun.shadow.camera;
     if (cam.right !== S) { cam.left = -S; cam.right = S; cam.top = S; cam.bottom = -S; cam.near = 10; cam.far = S * 8 + 2500; cam.updateProjectionMatrix(); }

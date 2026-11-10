@@ -1,18 +1,19 @@
 // 7x7: boot, main loop and the glue between systems.
 import * as THREE from 'three';
-import { MAP, MAPMODE, K, buildTerrain, buildForests, heightAt, ll, setEdits } from './terrain.js';
-import { GX, GZ, zone, land, zoneTex, initLand, flushOverlay, refreshOverlay, resetWorld, updateLand, stats, state as W, ZONES, tierOf, TIERS, buildings, toI, toJ, CELL } from './world.js';
+import { MAP, MAPMODE, K, buildTerrain, buildForests, heightAt, ll, setEdits, HAS_AREAS, AREAS, areas, areaOpen, coastDist } from './terrain.js';
+import { GX, GZ, zone, land, zoneTex, initLand, flushOverlay, refreshOverlay, resetWorld, updateLand, refreshAreas, stats, state as W, ZONES, tierOf, TIERS, buildings, toI, toJ, CELL, removeBuilding } from './world.js';
 import { BuildingRenderer, buildingUniforms } from './buildings.js';
 import { Roads, RoadRenderer } from './roads.js';
 import { Sky } from './sky.js';
 import { CameraRig } from './camera.js';
-import { sim, stepSim, refreshCells, resetSim, frontierSize, yearOf, seasonOf, SEASONS } from './sim.js';
+import { sim, stepSim, refreshCells, resetSim, frontierSize, yearOf, seasonOf, SEASONS, spawn } from './sim.js';
 import { makeUndo } from './undo.js';
 import { makeTools } from './tools.js';
 import { makeUI } from './ui.js';
 import { slots, saveSlot, serialize, deserialize, metaOf } from './save.js';
 import { hex2lin, smoothstep, rng } from './util.js';
 import './structures.js';
+import './blocks.js';
 import { city, initCity, resetCity2, stepCity, recompute, dailyEconomy, markDirty, heatTex, heatScale, paintOverlay, priceIndex, post } from './city.js';
 import { tech, initTech, resetTech, techDay, pulse } from './tech.js';
 import { culture, initCulture, resetCulture, cultureDay, stepCulture, stepTips, onAdded as cultureAdded, onRemoved as cultureRemoved } from './culture.js';
@@ -20,10 +21,11 @@ import { makeLife } from './life.js';
 import { makeAudio } from './audio.js';
 import { place, drawStreets, southHighway, ERAS } from './place.js';
 import { cloud } from './cloud.js';
+import { makePost } from './post.js';
 
 const canvas = document.getElementById('c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.9;
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.0;
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap;
 renderer.info.autoReset = false;
 let pixelRatio = Math.min(window.devicePixelRatio || 1, 2), maxPR = pixelRatio;
@@ -44,25 +46,34 @@ W.hooks.chunkDirty = (c) => bRender.markDirty(c);
 W.hooks.cellsChanged = refreshCells;
 W.hooks.clearTrees = (x0, z0, x1, z1) => forests.clearRect(x0, z0, x1, z1);
 
-const START = { real: [-122.405, 37.787, 2600], compact: [-122.405, 37.787, 1700], bay: [-122.405, 37.787, 2200] }[MAPMODE];
+const START = { real: [-122.405, 37.787, 2600], compact: [-122.405, 37.787, 1700], region: [-122.405, 37.787, 2000] }[MAPMODE];
+const NOFX = new URLSearchParams(location.search).get('fx') === '0';
 const game = {
-  canvas, renderer, scene, camera, rig, roads, sky, terrainU: terrain.uniforms, speed: 1, lastSpeed: 1, cycle: true, mode: 'title', clock: 0, overlay: 'none', camMode: 'angled', readOnly: false, cloudId: null, cloudName: '', mapK: K, shake: 0,
+  fx: !NOFX, canvas, renderer, scene, camera, rig, roads, sky, terrainU: terrain.uniforms, speed: 1, lastSpeed: 1, cycle: true, mode: 'title', clock: 0, overlay: 'none', camMode: 'angled', readOnly: false, cloudId: null, cloudName: '', mapK: K, shake: 0,
   fixedHour: 16.2, viewHour: () => (game.cycle ? sim.time : game.fixedHour),
   setHour(h) { game.fixedHour = h % 24; if (game.cycle) sim.time = h % 24; },
   setSpeed(s) { if (s) game.lastSpeed = s; game.speed = s; game.ui.refresh(); },
   setShadows(on) { if (renderer.shadowMap.enabled === on) return; renderer.shadowMap.enabled = on; sky.sun.castShadow = on; scene.traverse((o) => { if (o.material) o.material.needsUpdate = true; }); },
   modalOpen: () => game.mode === 'title' || game.ui.menuOpen(),
+  // nearby cities: keys = the open ones, all = everything open. Re-reads which land can be built on.
+  setAreas(keys, all) { if (!HAS_AREAS) return; const was = areas.sig; areas.open = new Set(['sf', ...(keys || [])]); areas.all = !!all; areas.sig = AREAS.map((a, i) => (areaOpen(i) ? 1 : 0)).join(''); if (was === areas.sig) return; city.cfg.areas = all ? 'open' : 'grow'; terrain.uniforms.uLock.value = AREAS.map((a, i) => (areaOpen(i) ? 0 : 1)); refreshAreas(); },
+  openAllAreas() { game.setAreas([...areas.open], true); game.ui.toast('Every nearby city is open for building', 'gold'); game.ui.refresh(true); markDirty(); },
+  checkAreas() { // once a day: open the next city when enough people live here
+    if (!HAS_AREAS || areas.all || game.readOnly) return;
+    for (const a of AREAS) if (!areas.open.has(a.k) && stats.pop >= a.at) { game.setAreas([...areas.open, a.k], false); game.ui.toast(`${a.name} is open for building`, 'gold'); post(`${a.name} just opened up. Bridges, ferries and bulldozers welcome.`, 'life'); }
+  },
   doUndo(redo) { if (game.readOnly) return; const l = redo ? game.undo.redo() : game.undo.undo(); if (l) game.ui.toast(`${redo ? 'Redid' : 'Undid'} ${l}`); game.tools.touch(); game.ui.refresh(true); markDirty(); },
   resetCity() {
     resetWorld(); roads.clear(); rRender.clear(); bRender.clear(); resetSim(); forests.reset(); game.undo.clear();
     const bb = setEdits([]); if (bb) { const G = MAP.G / CELL; updateLand(Math.floor(bb[0] * G) - 2, Math.floor(bb[1] * G) - 2, Math.ceil(bb[2] * G) + 2, Math.ceil(bb[3] * G) + 2); }
-    resetCity2(true); resetTech(); resetCulture(); game.life.reset(); game.setOverlay('none');
+    game.setAreas([], false); resetCity2(true); resetTech(); resetCulture(); game.life.reset(); game.setOverlay('none');
     sim.day = 1; sim.time = 10; sim.year0 = 2025; game.tools.state.selected = null; game.tools.cancel(); game.ui.showInfo(null); game.cloudId = null; game.cloudName = '';
   },
   // o: the start-screen choices
   startNew(o) {
     game.readOnly = false; game.resetCity();
     const c = city.cfg; c.money = o.money; c.traffic = o.traffic; c.landValue = o.lv !== 'off'; c.ui = o.ui; c.fog = o.fog !== 'off'; c.rain = o.rain !== 'off'; c.sunsets = o.sunsets !== 'off'; c.era = o.era; c.start = o.start;
+    if (o.areas === 'open') game.setAreas([], true); c.night = o.night === 'neon' ? 'neon' : 'real';
     sim.year0 = ERAS[o.era].year; sim.growth = +o.growth || 1; city.treasury = Math.round(4000 * priceIndex(sim.year0));
     const [x, z] = ll(START[0], START[1]); rig.set(x, z, START[2], 0.5, 0.82);
     if (o.start === 'demo') buildDemo();
@@ -85,7 +96,7 @@ const game = {
   setGfx(name) {
     city.cfg.gfx = name; const dpr = window.devicePixelRatio || 1;
     const P = { low: [1, false, 'low'], medium: [1.25, true, 'medium'], high: [1.75, true, 'high'], ultra: [2, true, 'ultra'], auto: [2, true, 'high'] }[name] || [2, true, 'high'];
-    maxPR = Math.min(dpr, P[0]); pixelRatio = maxPR; game.setShadows(P[1]); game.life.setQuality(P[2]); slow = 0; resize();
+    maxPR = Math.min(dpr, P[0]); pixelRatio = maxPR; game.setShadows(P[1]); game.life.setQuality(P[2]); game.fx = name !== 'low' && !NOFX; slow = 0; resize();
   },
   setCam(mode, snap = false) { game.camMode = mode; const r = rig; if (mode === 'top') r.set(r.gTarget.x, r.gTarget.z, r.gDist, r.gYaw, 1.553, snap); else if (mode === 'street') { // stand on the nearest street and look along it
       const n = roads.nearestSeg(r.gTarget.x, r.gTarget.z, 500); let x = r.gTarget.x, z = r.gTarget.z, yaw = r.gYaw;
@@ -104,7 +115,7 @@ W.hooks.added = (b) => { game.life.onAdded(b); cultureAdded(b); markDirty(); };
 W.hooks.removed = (b) => { cultureRemoved(b); markDirty(); };
 sim.onDay = () => {
   let len = 0; for (const s of roads.segs.values()) len += s.len;
-  recompute(); dailyEconomy(len); techDay(); cultureDay(); pulse();
+  recompute(); dailyEconomy(len); techDay(); cultureDay(); pulse(); game.checkAreas();
   if (city.cfg.money === 'budget' && city.treasury < 0 && sim.day % 2 === 0) game.ui.toast('The treasury is in the red', 'warn');
 };
 game.ui = makeUI(game);
@@ -116,6 +127,9 @@ function buildDemo() {
   for (let k = 0; k <= NZB; k++) roads.add(k % 5 === 0 ? 'avenue' : 'street', [X0, Z0 + k * BH, X1, Z0 + k * BH]);
   roads.add('boulevard', [X0, Z1 - BH * 1.5, X0 + BW * NXB * 0.325, Z1 - BH * NZB * 0.45, X0 + BW * NXB * 0.675, Z0 + BH * NZB * 0.25, X1, Z0 + BH * 1.5].map((v) => Math.round(v)));
   const cx = X0 + BW * NXB * 0.55, cz = Z0 + BH * NZB * 0.42, r = rng(7), q = s;
+  const main = [X0, Z1 - BH * 1.5, X0 + BW * NXB * 0.325, Z1 - BH * NZB * 0.45, X0 + BW * NXB * 0.675, Z0 + BH * NZB * 0.25, X1, Z0 + BH * 1.5];
+  const distToMain = (x, z) => { let b = 1e9; for (let k = 0; k + 3 < main.length; k += 2) { const ex = main[k + 2] - main[k], ez = main[k + 3] - main[k + 1], t = Math.max(0, Math.min(1, ((x - main[k]) * ex + (z - main[k + 1]) * ez) / (ex * ex + ez * ez))); b = Math.min(b, Math.hypot(x - main[k] - ex * t, z - main[k + 1] - ez * t)); } return b; };
+  const nearShore = (x, z) => coastDist(x, z) < 300;
   // civic lots first, so the zoning flows around them
   const lot = (key, bx, bz, w, d, front = 2) => { const i = toI(X0 + bx * BW) + 2, j = toJ(Z0 + bz * BH) + 2; return place(game, key, i, j, w, d, front, { quiet: true, free: true, now: -100, seed: 11 + bx * 7 + bz }); };
   lot('park', Math.round(NXB * 0.3), Math.round(NZB * 0.6), 9, 19); lot('plaza', Math.round(NXB * 0.55), Math.round(NZB * 0.4), 9, 9); lot('school', Math.round(NXB * 0.2), Math.round(NZB * 0.2), 6, 6);
@@ -124,9 +138,11 @@ function buildDemo() {
   for (let j = toJ(Z0) - 2; j <= toJ(Z1) + 2; j++) for (let i = toI(X0) - 2; i <= toI(X1) + 2; i++) {
     const o = j * GX + i; if (!land[o]) continue;
     const x = MAP.minX + (i + 0.5) * CELL, z = MAP.minZ + (j + 0.5) * CELL, d = Math.hypot(x - cx, (z - cz) * 0.8) / q, bx = Math.floor((x - X0) / BW), bz = Math.floor((z - Z0) / BH), h = ((bx * 7 + bz * 13) % 10) / 10;
+    // a small downtown, flats and shops around it, then rowhouses: towers stay in one cluster, the way the real skyline does
+    const ax = Math.abs(((x - X0 + BW * 2.5) % (BW * 5)) - BW * 2.5), az = Math.abs(((z - Z0 + BH * 2.5) % (BH * 5)) - BH * 2.5), corridor = Math.min(ax, az, distToMain(x, z)) < 44;
     let zid;
-    if (d < 230) zid = h < 0.3 ? 9 : 6; else if (d < 380) zid = h < 0.4 ? 4 : h < 0.5 ? 11 : 6; else if (d < 760) zid = h < 0.12 ? 4 : h < 0.22 ? 5 : h < 0.3 ? 11 : 2;
-    else if (x > X1 - BW * 4 && z > Z1 - BH * 3) zid = h < 0.5 ? 8 : 7; else if (d < 1000) zid = h < 0.15 ? 3 : h < 0.22 ? 10 : 2; else zid = h < 0.12 ? 3 : 1;
+    if (d < 190) zid = h < 0.3 ? 9 : 6; else if (d < 320) zid = h < 0.35 ? 4 : h < 0.6 ? 11 : h < 0.8 ? 6 : 2; else if (d < 520) zid = corridor ? (h < 0.5 ? 11 : 3) : h < 0.1 ? 5 : 2;
+    else if (x > X1 - BW * 3 && z > Z1 - BH * 2.5) zid = nearShore(x, z) ? 12 : h < 0.4 ? 8 : 7; else if (corridor) zid = h < 0.2 ? 10 : h < 0.45 ? 11 : 3; else zid = d < 800 && h < 0.25 ? 2 : 1;
     zone[o] = zid;
   }
   refreshOverlay(0, 0, GX - 1, GZ - 1); refreshCells(toI(X0) - 4, toJ(Z0) - 4, toI(X1) + 4, toJ(Z1) + 4);
@@ -135,7 +151,16 @@ function buildDemo() {
   game.life.rebuildTransit();
   const keep = sim.rand, od = sim.onDay; sim.rand = r; sim.onDay = null; recompute();
   for (let k = 0; k < 2600; k++) { stepSim(1, -100); if (k % 400 === 0) recompute(); }
-  sim.rand = keep; sim.onDay = od; sim.time = 13.5; sim.day = 1; game.undo.clear();
+  // the middle few blocks get their towers now instead of waiting for the population to catch up
+  for (const b of [...buildings.values()]) {
+    if (b.sp || !(b.zone === 6 || b.zone === 9 || b.zone === 4 || b.zone === 11)) continue;
+    const x = MAP.minX + (b.i + b.w / 2) * CELL, z = MAP.minZ + (b.j + b.d / 2) * CELL, d = Math.hypot(x - cx, (z - cz) * 0.8) / q;
+    const want = Math.min(b.zone === 11 ? 4 : 5, d < 110 ? 4 + (b.seed % 3 === 0 ? 1 : 0) : d < 210 ? 3 + (b.seed % 2) : d < 330 ? 2 + (b.seed % 2) : 0);
+    if (want <= b.level || (want >= 4 && b.w * b.d < 9)) continue;
+    removeBuilding(b.id); spawn({ i: b.i, j: b.j, w: b.w, d: b.d, zone: b.zone, front: b.front }, want, b.seed, -100);
+  }
+  recompute();
+  sim.rand = keep; sim.onDay = od; sim.time = 16.2; sim.day = 1; game.undo.clear();
   for (const b of buildings.values()) b.born = 1;
   rig.set(cx + 60, cz + 120, 1350 * (K < 1 ? 0.75 : 1), 0.62, 0.42);
 }
@@ -166,6 +191,7 @@ function tick(dt) {
   buildingUniforms.uTime.value = game.clock; buildingUniforms.uNight.value = sky.night;
   buildingUniforms.uLit.value.set(...litFractions(hour));
   buildingUniforms.uSkyRefl.value.copy(sky.zen).lerp(sky.hor, 0.5);
+  { const neon = city.cfg.night === 'neon'; buildingUniforms.uGlow.value.set(neon ? 0.8 : 0.5, neon ? 3.0 : 1.5, neon ? 1.25 : 1.0); sky.neon = neon; }
   rRender.update(6); bRender.update(rig.target.x, rig.target.z, 7); flushOverlay();
   game.life.update(dt, simDt); game.audio.update(dt);
   sky.update(camera, rig.target, rig.dist, game.clock); terrain.updateLOD(camera.position);
@@ -177,10 +203,16 @@ function tick(dt) {
     cloudAcc += dt; if (cloudAcc > 300) { cloudAcc = 0; if (game.cloudId) { const d = serialize(game); cloud.save(game.cloudName || 'San Francisco', metaOf(d), d, game.cloudId).then(() => game.ui.toast('Saved to the cloud')).catch(() => {}); } }
   }
 }
-function render() { renderer.info.reset(); renderer.render(scene, camera); }
+let post3 = null; // bloom and colour grade; built on first use so a failure leaves the plain renderer working
+function render() {
+  renderer.info.reset();
+  if (game.fx && !post3) { try { post3 = makePost(renderer, scene, camera); post3.setSize(window.innerWidth, window.innerHeight, pixelRatio); } catch (e) { console.warn('post-processing off:', e.message); game.fx = false; } }
+  if (game.fx && post3) { const s = sky.sunH, golden = smoothstep(-0.05, 0.08, s) * (1 - smoothstep(0.18, 0.42, s)); post3.update(sky.night, golden, city.cfg.night === 'neon'); post3.render(); }
+  else renderer.render(scene, camera);
+}
 function resize() {
   const w = window.innerWidth, h = window.innerHeight;
-  renderer.setPixelRatio(pixelRatio); renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+  renderer.setPixelRatio(pixelRatio); renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); if (post3) post3.setSize(w, h, pixelRatio);
 }
 window.addEventListener('resize', resize); resize();
 
@@ -196,7 +228,7 @@ function frame(now) {
     showDebug();
     if (city.cfg.gfx !== 'auto') return;
     // auto: drop resolution a step when the frame rate stays low, then detail; restore when there is headroom
-    if (fps < 27) { if (++slow >= 3) { if (pixelRatio > 1) { pixelRatio = Math.max(1, pixelRatio - 0.25); resize(); } else if (game.life.quality() === 'high') game.life.setQuality('medium'); else if (game.life.quality() === 'medium') game.life.setQuality('low'); slow = 0; } }
+    if (fps < 27) { if (++slow >= 3) { if (pixelRatio > 1) { pixelRatio = Math.max(1, pixelRatio - 0.25); resize(); } else if (game.life.quality() === 'high') game.life.setQuality('medium'); else if (game.fx && fps < 20) game.fx = false; else if (game.life.quality() === 'medium') game.life.setQuality('low'); slow = 0; } }
     else { slow = Math.min(slow, 0) - (fps > 57 ? 1 : 0); if (slow <= -6 && pixelRatio < maxPR) { pixelRatio = Math.min(maxPR, pixelRatio + 0.25); resize(); slow = 0; } }
   }
 }
@@ -229,7 +261,7 @@ window.render_game_to_text = () => {
   });
 };
 const _v = new THREE.Vector3();
-window.game = Object.assign(game, { sim, stats, buildings, heightAt, bRender, rRender, city, tech, culture, zone, land, cloud, ll,
+window.game = Object.assign(game, { sim, stats, buildings, spawn, heightAt, bRender, rRender, city, tech, culture, zone, land, cloud, ll,
   worldToScreen(x, z, y) { _v.set(x, y ?? Math.max(heightAt(x, z), 0), z).project(camera); return [(_v.x + 1) / 2 * window.innerWidth, (1 - _v.y) / 2 * window.innerHeight, _v.z < 1 && _v.z > -1]; } });
 
 // ---- boot ----------------------------------------------------------------------------------------
@@ -237,7 +269,7 @@ window.game = Object.assign(game, { sim, stats, buildings, heightAt, bRender, rR
 sim.time = 16.2;
 const params = new URLSearchParams(location.search), loading = document.getElementById('loading');
 const reveal = () => { loading.classList.add('out'); setTimeout(() => loading.remove(), 600); };
-const withMap = (map, key, val) => { const u = new URL(location.href); u.search = ''; if (map !== 'real') u.searchParams.set('map', map); u.searchParams.set(key, val); location.href = u.toString(); };
+const withMap = (map, key, val) => { const u = new URL(location.href); u.search = ''; if (map !== 'region') u.searchParams.set('map', map); u.searchParams.set(key, val); location.href = u.toString(); };
 async function boot() {
   tick(0.016); render();
   const shared = params.get('city'), load = params.get('load');
@@ -252,7 +284,7 @@ async function boot() {
       reveal(); requestAnimationFrame(frame); return;
     } catch (x) { if (x.map) return withMap(x.map, shared ? 'city' : 'load', shared || load); document.getElementById('title').hidden = false; game.ui.titleErr(x.message); }
   } else document.getElementById('title').hidden = false;
-  if (params.get('go') === '1') { game.ui.go(); history.replaceState(null, '', location.pathname + (MAPMODE !== 'real' ? `?map=${MAPMODE}` : '')); }
+  if (params.get('go') === '1') { game.ui.go(); history.replaceState(null, '', location.pathname + (MAPMODE !== 'region' ? `?map=${MAPMODE}` : '')); }
   reveal(); requestAnimationFrame(frame);
 }
 boot();

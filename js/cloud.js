@@ -41,5 +41,5 @@ export const cloud = {
   async remove(id) { return rpc('sf7x7_delete', { p_token: syncCode(), p_id: id }); },
   async share(id, on = true) { return rpc('sf7x7_share', { p_token: syncCode(), p_id: id, p_on: on }); },
   async shared(shareId) { const r = await rpc('sf7x7_get_shared', { p_share: shareId }); if (!r || !r.length) throw new Error('This shared city no longer exists'); return { name: r[0].name, meta: r[0].meta, data: await unpack(r[0].data) }; },
-  shareUrl(shareId, map) { const u = new URL(location.href); u.search = ''; u.hash = ''; u.searchParams.set('city', shareId); if (map && map !== 'real') u.searchParams.set('map', map); return u.toString(); },
+  shareUrl(shareId, map) { const u = new URL(location.href); u.search = ''; u.hash = ''; u.searchParams.set('city', shareId); if (map && map !== 'region') u.searchParams.set('map', map); return u.toString(); },
 };

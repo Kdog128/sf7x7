@@ -1,5 +1,6 @@
 // Things that move: cars, people, transit vehicles, weather, cranes and scaffolds, particles, event staging.
 import * as THREE from 'three';
+import * as M from './models.js';
 import { MAP, K, heightAt, coastDist } from './terrain.js';
 import { CELL, buildings, stats } from './world.js';
 import { ROAD_TYPES, roadY, cumLen, previewGeometry } from './roads.js';
@@ -32,10 +33,12 @@ export function makeLife(game) {
 
   // ---- vehicles on roads ---------------------------------------------------------------------------
   const MAXC = 2000, MAXP = 800;
-  const cars = inst(unit, lambert(), MAXC, true), carLights = inst(unit, glowMat(), MAXC * 2), pucks = inst(unit, lambert(), 400);
-  const peds = inst(unit, lambert(), MAXP);
-  const C = { seg: new Int32Array(MAXC), s: new Float32Array(MAXC), dir: new Int8Array(MAXC), sp: new Float32Array(MAXC), lane: new Float32Array(MAXC), kind: new Uint8Array(MAXC), n: 0 };
-  const P = { seg: new Int32Array(MAXP), s: new Float32Array(MAXP), dir: new Int8Array(MAXP), sp: new Float32Array(MAXP), side: new Int8Array(MAXP), kind: new Uint8Array(MAXP), n: 0 };
+  // body styles: 0 saloon, 1 crossover, 2 van, 3 pickup, 4 driverless crossover with its sensor dome
+  const walkU = { value: 0 }, carMat = M.tintMaterial(), CARS = [M.sedan(), M.suv(), M.van(), M.pickup(), M.suv(true)].map((g, k) => inst(g, carMat, k === 0 ? MAXC : MAXC >> 1, true));
+  const carLights = inst(unit, glowMat(), MAXC * 2), HALF = [2.22, 2.3, 2.7, 2.7, 2.3];
+  const pedMat = M.tintMaterial(walkU), peds = inst(M.person(), pedMat, MAXP), scoots = inst(M.person(true), M.tintMaterial(), 300);
+  const C = { seg: new Int32Array(MAXC), s: new Float32Array(MAXC), dir: new Int8Array(MAXC), sp: new Float32Array(MAXC), lane: new Float32Array(MAXC), kind: new Uint8Array(MAXC), col: new Uint8Array(MAXC), n: 0 };
+  const P = { seg: new Int32Array(MAXP), s: new Float32Array(MAXP), dir: new Int8Array(MAXP), sp: new Float32Array(MAXP), side: new Int8Array(MAXP), kind: new Uint8Array(MAXP), hue: new Float32Array(MAXP), lum: new Float32Array(MAXP), n: 0 };
   let pool = [], poolW = [], poolTot = 0, pedPool = [], pedSet = new Set(), poolAcc = 9, lastN = -1;
   const SPEED = { street: 9, avenue: 12, boulevard: 14, oneway: 10, highway: 27, ramp: 13 };
   function refreshPool() {
@@ -53,7 +56,7 @@ export function makeLife(game) {
     const id = pickSeg(), s = roads.segs.get(id); if (!s) return false;
     C.seg[i] = id; C.s[i] = Math.random() * s.len; C.dir[i] = s.type === 'oneway' || Math.random() < 0.5 ? 1 : -1; C.sp[i] = 0.8 + Math.random() * 0.4; C.lane[i] = Math.random();
     const y = yearOf(), robo = y >= 2020 && Math.random() < clamp(0.04 + city.heat * 0.3, 0, 0.4) + (y >= 2040 ? 0.3 : 0);
-    C.kind[i] = robo ? 1 : 0; cars.setColorAt(i, robo ? col.set(0xe9e7e0) : CAR_COLS[Math.floor(Math.random() * CAR_COLS.length)]); return true;
+    const u = Math.random(); C.kind[i] = robo ? 4 : u < 0.5 ? 0 : u < 0.8 ? 1 : u < 0.9 ? 2 : 3; C.col[i] = Math.floor(Math.random() * CAR_COLS.length); return true;
   }
   const ptAt = (s, d, out) => { const p = s.pts, c = s.cum, n = c.length; let k = 0; while (k < n - 2 && c[k + 1] < d) k++; const l = c[k + 1] - c[k] || 1, t = (d - c[k]) / l, dx = (p[k * 2 + 2] - p[k * 2]) / l, dz = (p[k * 2 + 3] - p[k * 2 + 1]) / l; out[0] = p[k * 2] + dx * l * t; out[1] = p[k * 2 + 1] + dz * l * t; out[2] = dx; out[3] = dz; };
   const o4 = [0, 0, 0, 0];
@@ -65,12 +68,13 @@ export function makeLife(game) {
     if (s.type === 'oneway' && !startHere) return null;
     return [id, startHere ? 1 : -1, s];
   }
+  const dbg = new Float32Array(12); // where the first few cars are, for tests
   function stepCars(dt, night) {
     const hour = sim.time, rush = 0.35 + 0.65 * Math.max(smoothstep(6, 8.5, hour) * (1 - smoothstep(9.5, 11, hour)), smoothstep(15.5, 17.5, hour) * (1 - smoothstep(19, 21, hour)), 0.55 * smoothstep(9, 11, hour) * (1 - smoothstep(20, 23.5, hour)));
     const yr = yearOf(), era = yr < 1912 ? 0.05 : yr < 1930 ? 0.3 : yr < 1950 ? 0.6 : 1; // few motor cars before the twenties
     const simT = city.cfg.traffic === 'sim', want = pool.length ? Math.min(Q.cars, Math.round((poolTot / 46) * rush * era * (simT ? 1.25 : 1))) : 0;
     while (C.n < want) { if (!spawnCar(C.n)) break; C.n++; } if (C.n > want) C.n = Math.max(want, C.n - 4);
-    const R2 = Math.pow(clamp(rig.dist * 1.25, 380, 3200) * 1.25, 2), tx = rig.target.x, tz = rig.target.z; let nl = 0, np = 0;
+    const R2 = Math.pow(clamp(rig.dist * 1.25, 380, 3200) * 1.25, 2), tx = rig.target.x, tz = rig.target.z, neon = city.cfg.night === 'neon', cn = [0, 0, 0, 0, 0]; let nl = 0;
     for (let i = 0; i < C.n; i++) {
       let s = roads.segs.get(C.seg[i]); if (!s) { spawnCar(i); s = roads.segs.get(C.seg[i]); if (!s) continue; }
       const T = ROAD_TYPES[s.type]; let v = SPEED[s.type] * C.sp[i];
@@ -82,37 +86,44 @@ export function makeLife(game) {
       const off = s.type === 'oneway' ? (C.lane[i] - 0.5) * T2.half * 1.2 : (Math.floor(C.lane[i] * lanes) + 0.5) * (T2.half / lanes) * (s.type === 'boulevard' ? 0.82 : 0.92) + (s.type === 'boulevard' ? 1.6 : 0);
       const x = o4[0] - dz * off, z = o4[1] + dx * off;
       if ((x - tx) * (x - tx) + (z - tz) * (z - tz) > R2) { spawnCar(i); continue; }
-      const y = roadY(x, z) + 0.1;
-      put(cars, i, x, y, z, 1.9, 1.45, 4.5, dx, dz);
-      if (night > 0.25) { put(carLights, nl, x + dx * 2.2, y + 0.55, z + dz * 2.2, 1.7, 0.28, 0.25, dx, dz); carLights.setColorAt(nl++, col.setRGB(1.9, 1.7, 1.25)); put(carLights, nl, x - dx * 2.25, y + 0.6, z - dz * 2.25, 1.7, 0.25, 0.2, dx, dz); carLights.setColorAt(nl++, col.setRGB(1.5, 0.12, 0.08)); }
-      if (C.kind[i] === 1 && np < 400) put(pucks, np++, x, y + 1.45, z, 0.7, 0.42, 0.7, dx, dz);
+      const y = roadY(x, z) + 0.1; if (i < 6) { dbg[i * 2] = x; dbg[i * 2 + 1] = z; }
+      const kd = C.kind[i], mesh = CARS[kd], q = cn[kd]; if (q >= mesh.instanceMatrix.count) continue; cn[kd]++;
+      put(mesh, q, x, y, z, 1, 1, 1, dx, dz); mesh.setColorAt(q, kd === 4 ? col.set(0xeceae4) : CAR_COLS[C.col[i]]);
+      if (night > 0.25) { // headlamps and tail lamps; the stylized night stretches them into streaks
+        const hl = HALF[kd], st = neon ? 2.6 : 0.3;
+        put(carLights, nl, x + dx * (hl + st * 0.5), y + 0.62, z + dz * (hl + st * 0.5), 1.6, 0.2, st, dx, dz); carLights.setColorAt(nl++, col.setRGB(2.2, 1.95, 1.4));
+        put(carLights, nl, x - dx * (hl + st * 0.4), y + 0.7, z - dz * (hl + st * 0.4), 1.6, 0.18, st * 0.8, dx, dz); carLights.setColorAt(nl++, col.setRGB(1.9, 0.14, 0.08));
+      }
       void T;
     }
-    cars.count = C.n; cars.instanceMatrix.needsUpdate = true; if (cars.instanceColor) cars.instanceColor.needsUpdate = C.n !== lastN || true; lastN = C.n;
+    for (let k = 0; k < 5; k++) { const m = CARS[k]; m.count = cn[k]; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; } lastN = C.n;
     carLights.count = nl; carLights.instanceMatrix.needsUpdate = true; if (carLights.instanceColor) carLights.instanceColor.needsUpdate = true;
-    pucks.count = np; pucks.instanceMatrix.needsUpdate = true;
   }
   function spawnPed(i) {
     const id = pedPool[Math.floor(Math.random() * pedPool.length)], s = roads.segs.get(id); if (!s) return false;
     P.seg[i] = id; P.s[i] = Math.random() * s.len; P.dir[i] = Math.random() < 0.5 ? 1 : -1; P.side[i] = Math.random() < 0.5 ? 1 : -1;
     const scoot = yearOf() >= 2017 && Math.random() < clamp(0.04 + city.heat * 0.2, 0, 0.3); P.kind[i] = scoot ? 1 : 0; P.sp[i] = scoot ? 4.5 + Math.random() * 2 : 1.1 + Math.random() * 0.6;
-    peds.setColorAt(i, scoot ? col.set(0x4fa89a) : col.setHSL(Math.random(), 0.18, 0.28 + Math.random() * 0.4)); return true;
+    P.hue[i] = Math.random(); P.lum[i] = 0.3 + Math.random() * 0.45; return true;
   }
   function stepPeds(dt, night) {
     const show = rig.dist < 620 && Q.peds > 0 && pedPool.length > 0, want = show ? Math.round(Math.min(Q.peds, pedPool.length * 18) * (1 - night * 0.6) * (1 - city.wx.rain * 0.6)) : 0;
-    while (P.n < want) { if (!spawnPed(P.n)) break; P.n++; } if (P.n > want) P.n = want;
+    while (P.n < want) { if (!spawnPed(P.n)) break; P.n++; } if (P.n > want) P.n = want; let np = 0, ns = 0;
     for (let i = 0; i < P.n; i++) {
       const s = roads.segs.get(P.seg[i]); if (!s || !pedSet.has(P.seg[i])) { spawnPed(i); continue; }
       P.s[i] += P.dir[i] * P.sp[i] * dt; if (P.s[i] > s.len || P.s[i] < 0) { if (Math.random() < 0.5) { spawnPed(i); continue; } P.dir[i] = -P.dir[i]; P.s[i] = clamp(P.s[i], 0, s.len); }
       ptAt(s, P.s[i], o4); const T = ROAD_TYPES[s.type], off = (P.kind[i] ? T.half - 0.7 : T.half + T.walk * 0.55) * P.side[i], x = o4[0] - o4[3] * off, z = o4[1] + o4[2] * off, y = roadY(x, z) + (P.kind[i] ? 0 : 0.12);
-      if (P.kind[i]) put(peds, i, x, y, z, 0.45, 1.5, 1.1, o4[2] * P.dir[i], o4[3] * P.dir[i]); else put(peds, i, x, y, z, 0.46, 1.68, 0.36, o4[2], o4[3]);
+      const hgt = 0.92 + ((i * 37) % 17) * 0.011, sc = P.kind[i] === 1, mesh = sc ? scoots : peds, q = sc ? ns : np; if (sc && ns >= 300) continue;
+      put(mesh, q, x, y, z, hgt, hgt, hgt, o4[2] * P.dir[i], o4[3] * P.dir[i]); mesh.setColorAt(q, col.setHSL(P.hue[i], 0.32, P.lum[i])); if (sc) ns++; else np++;
     }
-    peds.count = P.n; peds.instanceMatrix.needsUpdate = true; if (peds.instanceColor) peds.instanceColor.needsUpdate = true;
+    walkU.value = game.clock;
+    peds.count = np; peds.instanceMatrix.needsUpdate = true; if (peds.instanceColor) peds.instanceColor.needsUpdate = true;
+    scoots.count = ns; scoots.instanceMatrix.needsUpdate = true; if (scoots.instanceColor) scoots.instanceColor.needsUpdate = true;
   }
 
   // ---- transit ------------------------------------------------------------------------------------
   const lineGroup = new THREE.Group(); lineGroup.visible = false; scene.add(lineGroup);
-  const stopMesh = inst(unit, lambert(), 1200, true), stopSign = inst(unit, glowMat(), 600), tv = inst(unit, lambert(), 160, true), tvGlow = inst(unit, glowMat(), 320);
+  const stopMesh = inst(unit, lambert(), 1200, true), stopSign = inst(unit, glowMat(), 600), tvGlow = inst(unit, glowMat(), 320);
+  const tvMat = M.tintMaterial(), TV = { bus: inst(M.bus(), tvMat, 70, true), cable: inst(M.cableCar(), tvMat, 40, true), metro: inst(M.tram(), tvMat, 40, true), ferry: inst(M.ferry(), tvMat, 20, true) }, TVGLOW = { bus: [1.5, 0.75], cable: [1.5, 0.55], metro: [1.55, 0.95], ferry: [2.95, 0.9] };
   let vehicles = [];
   function route(ax, az, bx, bz) { // shortest path along roads between two points near roads; null when there is none
     const A = roads.nearestSeg(ax, az, 70), B = roads.nearestSeg(bx, bz, 70); if (!A || !B) return null;
@@ -162,17 +173,15 @@ export function makeLife(game) {
   }
   const recAt = (rec, d, out) => { const p = rec.pts, c = rec.cum, n = c.length; d = clamp(d, 0, rec.len); let k = 0; while (k < n - 2 && c[k + 1] < d) k++; const l = c[k + 1] - c[k] || 1, t = (d - c[k]) / l; out[2] = (p[k * 2 + 2] - p[k * 2]) / l; out[3] = (p[k * 2 + 3] - p[k * 2 + 1]) / l; out[0] = p[k * 2] + out[2] * l * t; out[1] = p[k * 2 + 1] + out[3] * l * t; };
   function stepTransit(dt, night) {
-    let n = 0, g = 0;
+    const cnt = { bus: 0, cable: 0, metro: 0, ferry: 0 }; let g = 0;
     for (const v of vehicles) {
       if (v.wait > 0) v.wait -= dt; else { v.s += v.dir * v.T.speed * dt; if (v.s >= v.rec.len) { v.s = v.rec.len; v.dir = -1; v.wait = 3; } else if (v.s <= 0) { v.s = 0; v.dir = 1; v.wait = 3; } else if (Math.random() < dt * 0.02) v.wait = 2; }
-      recAt(v.rec, v.s, o4); const [sx, sy, sz] = v.T.size, ferry = v.l.type === 'ferry', off = ferry ? 0 : 2.4 * v.dir, x = o4[0] - o4[3] * off, z = o4[1] + o4[2] * off, y = ferry ? -0.6 : roadY(x, z) + 0.15;
-      if (n >= 158) break;
-      put(tv, n, x, y + (ferry ? 0 : 0.35), z, sx, sy, sz, o4[2], o4[3]); tv.setColorAt(n++, col.set(v.T.body));
-      if (ferry) { put(tv, n, x, y + sy, z, sx * 0.7, 2.6, sz * 0.5, o4[2], o4[3]); tv.setColorAt(n++, col.set(0xf4f2ea)); }
-      else { put(tv, n, x, y + 0.35 + sy * 0.34, z, sx * 1.03, sy * 0.22, sz * 1.01, o4[2], o4[3]); tv.setColorAt(n++, col.set(v.l.color || v.T.color)); }
-      if (night > 0.25 && g < 318) { put(tvGlow, g, x, y + sy * 0.62, z, sx * 1.04, sy * 0.2, sz * 0.9, o4[2], o4[3]); tvGlow.setColorAt(g++, col.setRGB(1.5, 1.25, 0.8)); }
+      recAt(v.rec, v.s, o4); const [sx, , sz] = v.T.size, type = v.l.type, ferry = type === 'ferry', off = ferry ? 0 : 2.4 * v.dir, x = o4[0] - o4[3] * off, z = o4[1] + o4[2] * off, y = ferry ? -0.75 : roadY(x, z) + 0.12;
+      const mesh = TV[type] || TV.bus, n = cnt[type] || 0; if (n >= mesh.instanceMatrix.count) continue; cnt[type] = n + 1;
+      put(mesh, n, x, y, z, 1, 1, 1, o4[2] * v.dir, o4[3] * v.dir); mesh.setColorAt(n, col.set(v.l.color || v.T.color));
+      if (night > 0.25 && g < 318) { const gl = TVGLOW[type] || TVGLOW.bus; put(tvGlow, g, x, y + gl[0], z, sx * (ferry ? 0.9 : 0.99), gl[1], sz * (ferry ? 0.6 : 0.84), o4[2], o4[3]); tvGlow.setColorAt(g++, col.setRGB(1.5, 1.25, 0.8)); }
     }
-    tv.count = n; tv.instanceMatrix.needsUpdate = true; if (tv.instanceColor) tv.instanceColor.needsUpdate = true;
+    for (const k in TV) { const m = TV[k]; m.count = cnt[k]; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
     tvGlow.count = g; tvGlow.instanceMatrix.needsUpdate = true; if (tvGlow.instanceColor) tvGlow.instanceColor.needsUpdate = true;
   }
 
@@ -207,8 +216,9 @@ export function makeLife(game) {
     vertexShader: `attribute float aEnd; uniform float uTime, uSize; uniform vec3 uCam; varying float vA;
       void main(){ vec3 p = position; float sp = 0.9 + fract(p.x * 17.0) * 0.5;
         p.y = fract(p.y - uTime * sp * (95.0 / uSize)); p.x = fract(p.x + p.y * 0.06);
-        vec3 w = (p - 0.5) * uSize; w.y = (p.y - 0.35) * uSize; w += uCam; w.y += aEnd * uSize * 0.035; w.x += aEnd * uSize * 0.003;
+        vec3 w = (p - 0.5) * uSize; w.y = (p.y - 0.35) * uSize; w += uCam;
         w.xz = uCam.xz + mod(w.xz - uCam.xz + uSize * 0.5, uSize) - uSize * 0.5;
+        w.y += aEnd * uSize * 0.035; w.x += aEnd * uSize * 0.003;   // after the wrap, so both ends of a streak stay together
         vA = 1.0 - aEnd * 0.7; gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0); }`,
     fragmentShader: 'uniform float uAmt; uniform vec3 uCol; varying float vA; void main(){ gl_FragColor = vec4(uCol, 0.42 * uAmt * vA); }',
   }));
@@ -386,6 +396,7 @@ export function makeLife(game) {
     setQuality(name) { qName = QUALITY[name] ? name : 'high'; Q = QUALITY[qName]; C.n = Math.min(C.n, Q.cars); P.n = Math.min(P.n, Q.peds); game.sky.sun.shadow.mapSize.set(Q.shadow, Q.shadow); if (game.sky.sun.shadow.map) { game.sky.sun.shadow.map.dispose(); game.sky.sun.shadow.map = null; } },
     quality: () => qName,
     reset() { C.n = 0; P.n = 0; sites.length = 0; pl.fill(0); air.length = 0; setCircuit(null); rebuildTransit(); },
+    locate: () => ({ cars: Array.from(dbg), kinds: Array.from(C.kind.slice(0, 6)), transit: vehicles.map((v) => { recAt(v.rec, v.s, o4); return [v.l.type, Math.round(o4[0]), Math.round(o4[1])]; }) }),
     counts: () => ({ cars: C.n, peds: P.n, vehicles: vehicles.length, sites: sites.length, air: airN, props: props.count, crowd: crowd.count }),
   };
   return api;

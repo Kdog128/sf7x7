@@ -6,6 +6,7 @@ import { city, POLICIES, money, hoodCenters, hoodName, onFeed, markDirty, nm, OV
 import { tech, STAGES, startWave, startBust, waveLabel } from './tech.js';
 import { culture, FAME, fameTier, ROOM, roomTier, venueRank, artistById, addArtist, KIND_LABEL, LEAGUES, standings, FESTS, festState, festReady, holdFest, olyChecks, startBid, ACH, raceNow, quake } from './culture.js';
 import { fmt } from './util.js';
+import { HAS_AREAS, AREAS, areaOpen, ll } from './terrain.js';
 
 const TABS = [['economy', 'Economy'], ['hoods', 'Neighborhoods'], ['feed', 'Feed'], ['tech', 'Startups'], ['night', 'Nightlife'], ['sports', 'Sports'], ['events', 'Events'], ['graphs', 'Graphs'], ['ach', 'Awards']];
 const RAMPS = { lv: '#963c32,#cdaa50,#5a965f', sat: '#963c32,#cdaa50,#5a965f', dens: '#46465a,#785aaa,#d7a0d7', traffic: '#5a965f,#cdaa50,#aa3c32', noise: '#5a965f,#cdaa50,#aa3c32', transit: '#3c4650,#3c78be,#96cdeb', svc: '#464646,#328c8c,#96dccd' };
@@ -39,6 +40,7 @@ export function makePanels(game, { $, esc, toast, icons, refresh }) {
   function hoods() {
     const list = city.hoodStats.slice().sort((a, b) => b.pop + b.jobs - a.pop - a.jobs);
     let h = `<label class="check"><input type="checkbox" id="hoodLabels" ${showLabels ? 'checked' : ''}/> Show names on the map</label>`;
+    if (HAS_AREAS) h += `<details><summary>Nearby cities</summary>${AREAS.slice(1).map((a, k) => `<div class="kv"><span>${a.name}</span><b>${areaOpen(k + 1) ? 'Open' : `At ${fmt(a.at)} residents`} <button class="link" data-a="goarea" data-v="${k + 1}">Go</button></b></div>`).join('')}${AREAS.every((a, k) => areaOpen(k)) || game.readOnly ? '' : '<button class="btn sm" data-a="openall">Open all now</button>'}</details>`;
     if (!list.length) return h + '<p class="note">Neighborhoods appear here once people move in. Names follow the real city and can be changed.</p>';
     h += list.map((s) => `<div class="card ${openHood === s.id ? 'open' : ''}"><button class="cardhead" data-a="hood" data-v="${s.id}"><b>${esc(s.name)}</b><span>${s.vibe}</span></button>
       <div class="stats4"><span><b>${fmt(s.pop)}</b>residents</span><span><b>${fmt(s.jobs)}</b>jobs</span><span><b>$${fmt(s.rent)}</b>rent</span><span><b>${pct(s.sat)}</b>happy</span></div>
@@ -76,7 +78,7 @@ export function makePanels(game, { $, esc, toast, icons, refresh }) {
       h += '</div>';
     }
     const missing = Object.entries(LEAGUES).filter(([k]) => !culture.teams[k]);
-    if (missing.length) h += `<h3>Not here yet</h3><p class="note">${missing.map(([k, L]) => `${k}: ${esc(nm(L.team))}`).join('. ')}. Build the matching venue under Build, Sports to bring them in: ballpark for MLB, arena for NBA, WNBA and NHL, football stadium for NFL, soccer stadium for MLS, tennis center and golf course for the tournaments.</p>`;
+    if (missing.length) h += `<h3>Not here yet</h3><p class="note">${missing.map(([k, L]) => `${k}: ${esc(nm(L.team))}${L.from && yearOf() < L.from ? ` (from ${L.from})` : ''}`).join('. ')}. Build the matching venue under Build, Sports to bring them in: ballpark for MLB, arena for NBA, WNBA and NHL, football stadium for NFL, soccer stadium for MLS, tennis center and golf course for the tournaments.</p>`;
     return h || '<p class="note">No teams yet.</p>';
   }
   function events() {
@@ -123,6 +125,8 @@ export function makePanels(game, { $, esc, toast, icons, refresh }) {
   $('drawerBody').addEventListener('click', (e) => {
     const b = e.target.closest('[data-a]'); if (!b) return; const a = b.dataset.a, v = b.dataset.v, T = game.tools.state;
     if (a === 'hood') openHood = openHood === +v ? 0 : +v;
+    else if (a === 'goarea') { const [x, z] = ll(...AREAS[+v].c); fly(x, z, 3200); }
+    else if (a === 'openall') game.openAllAreas();
     else if (a === 'gohood') { const c = hoodCenters().find((q) => q.id === +v); if (c) fly(c.x, c.z, 2200); }
     else if (a === 'rename') { const n = $('hoodName').value.trim(); if (n) { city.hoodNames[+v] = n.slice(0, 40); markDirty(); labelKey = ''; toast('Renamed'); } }
     else if (a === 'paint') { T.hoodId = +v; game.tools.setTool('hood'); game.setOverlay('hood'); toggle(false); toast(`Drag on the map to add blocks to ${hoodName(+v)}`); return; }

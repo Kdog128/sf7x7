@@ -1,6 +1,6 @@
 // Pointer, wheel, touch and keyboard input, plus the four tools: inspect, roads, zones, bulldoze.
 import * as THREE from 'three';
-import { MAP, heightAt, raycastGround, coastDist } from './terrain.js';
+import { MAP, heightAt, raycastGround, coastDist, lockedAt } from './terrain.js';
 import { CELL, GX, GZ, zone, road, bid, land, buildings, removeBuilding, refreshOverlay, ZONES, toI, toJ, inGrid, state as W } from './world.js';
 import { ROAD_TYPES, previewGeometry, cumLen, nearestOn } from './roads.js';
 import { clamp } from './util.js';
@@ -129,7 +129,7 @@ export function makeTools(game) {
     return { x, z, on: null };
   }
   const bezier = (a, c, b) => { const len = Math.hypot(c.x - a.x, c.z - a.z) + Math.hypot(b.x - c.x, b.z - c.z), n = clamp(Math.ceil(len / 9), 6, 60), out = []; for (let i = 0; i <= n; i++) { const t = i / n, u = 1 - t; out.push(u * u * a.x + 2 * u * t * c.x + t * t * b.x, u * u * a.z + 2 * u * t * c.z + t * t * b.z); } return out; };
-  const onLand = (x, z) => x > MAP.minX + 8 && x < MAP.maxX - 8 && z > MAP.minZ + 8 && z < MAP.maxZ - 8 && heightAt(x, z) >= 0.55;
+  const onLand = (x, z) => x > MAP.minX + 8 && x < MAP.maxX - 8 && z > MAP.minZ + 8 && z < MAP.maxZ - 8 && heightAt(x, z) >= 0.55 && !lockedAt(x, z);
 
   // ---- block stamps and copy / paste -------------------------------------------------------------------
   const trimToLand = (ax, az, bx, bz, out) => {
@@ -371,6 +371,8 @@ export function makeTools(game) {
     if (e.button === 2) drag = { ...base, mode: 'rotate' };
     else if (e.button === 1 || (e.button === 0 && (keys.has('Space') || T.tool === 'inspect'))) drag = { ...base, mode: 'pan', p: planeAt(e.clientX, e.clientY, rig.target.y), click: e.button === 0 && !keys.has('Space') };
     else if (e.button === 0 && g) {
+      const shut = !g.water && ['road', 'zone', 'build', 'transit', 'terrain'].includes(T.tool) && lockedAt(g.x, g.z);
+      if (shut) { game.ui.toast(`${shut.name} opens at ${shut.at.toLocaleString('en-US')} residents`, 'warn'); return; }
       if (T.tool === 'road') drag = T.roadMode === 'copy' && !T.clip ? { ...base, mode: 'crect', a: g } : { ...base, mode: 'click' };
       else if (T.tool === 'zone') {
         if (T.zoneMode === 'brush') { undo.begin('zone'); paintDisc(g.x, g.z, T.zoneId); drag = { ...base, mode: 'brush', last: g }; }

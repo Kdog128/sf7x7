@@ -386,3 +386,8 @@ figure canvas { width: 100%; height: 76px; background: oklch(1 0 0 / 0.04); bord
   .hud.ui-side .dock { flex-direction: row; overflow: visible; }
   .hud.ui-side .toolbar button { flex-direction: column; }
 }
+
+/* Small text button inside lists */
+button.link { background: none; border: 0; padding: 0 0 0 8px; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
+button.link:hover { text-decoration: underline; }
+@media (max-width: 720px) { .options .hint { white-space: normal; font-size: var(--text-xs); } }

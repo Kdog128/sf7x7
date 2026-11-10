@@ -31,7 +31,7 @@ export const POLICIES = [
   { k: 'slowStreets', name: 'Slow streets', note: 'Calmer residential streets', fx: { trafficMul: 0.92, sat: 0.02 } },
 ];
 const defaults = () => ({
-  cfg: { money: 'unlimited', traffic: 'cosmetic', landValue: true, parody: false, wxAuto: true, fog: true, rain: true, sunsets: true, fogAmt: 1, rainAmt: 1, gfx: 'auto', ui: 'bottom', sound: true, tips: true, era: 'today', start: 'empty' },
+  cfg: { money: 'unlimited', traffic: 'cosmetic', landValue: true, parody: false, wxAuto: true, fog: true, rain: true, sunsets: true, fogAmt: 1, rainAmt: 1, gfx: 'auto', ui: 'bottom', sound: true, tips: true, era: 'today', start: 'empty', areas: 'grow', night: 'real' },
   treasury: 3000, income: 0, expense: 0, breakdown: {},
   tax: { R: 9, C: 9, O: 9, I: 9 }, hoodTax: {}, subsidy: { R: false, C: false, O: false, I: false }, policies: {}, custom: [], taxEvents: [],
   sat: 0.6, lvAvg: 0.3, noiseAvg: 0, trafficAvg: 0, transitShare: 0, tourism: 0, rent: 0, heat: 0,
@@ -49,7 +49,7 @@ for (const c of Object.values(CAT)) if (c.parody) addParody(c.name, c.parody);
 
 // ---- neighbourhoods --------------------------------------------------------------------------------
 const EXTRA = [['Sausalito', -122.485, 37.859], ['Marin Headlands', -122.52, 37.83], ['Tiburon', -122.456, 37.873], ['Mill Valley', -122.545, 37.906], ['Berkeley', -122.273, 37.871], ['Emeryville', -122.285, 37.836],
-  ['Oakland', -122.265, 37.80], ['West Oakland', -122.295, 37.812], ['Alameda', -122.265, 37.772], ['Daly City', -122.47, 37.688], ['Brisbane', -122.40, 37.683], ['Angel Island', -122.43, 37.862], ['Richmond', -122.36, 37.925]];
+  ['Oakland', -122.265, 37.80], ['West Oakland', -122.295, 37.812], ['Alameda', -122.265, 37.772], ['Daly City', -122.47, 37.688], ['Brisbane', -122.40, 37.683], ['South San Francisco', -122.41, 37.655], ['Colma', -122.455, 37.675], ['Angel Island', -122.43, 37.862], ['Richmond', -122.36, 37.925]];
 export function initHoods() {
   const base = new Uint8Array(HOOD.w * HOOD.h); let o = 0;
   for (let k = 0; k < HOOD.rle.length; k += 2) { base.fill(HOOD.rle[k], o, o + HOOD.rle[k + 1]); o += HOOD.rle[k + 1]; }

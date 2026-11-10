@@ -8,19 +8,24 @@ const hx = (s) => [parseInt(s.slice(1, 3), 16), parseInt(s.slice(3, 5), 16), par
 const sh = (c, k) => [c[0] * k, c[1] * k, c[2] * k];
 const mixc = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 const P = {
-  house: ['#c9bea6', '#a0a892', '#929da4', '#b59e68', '#8e6252', '#a8918b', '#7b8488', '#cfcbc0', '#aa9377', '#86876c', '#a06f56', '#9c9a93', '#bbaa90', '#857567'].map(hx),
-  brick: ['#8a5d4e', '#7a5346', '#96735f', '#6f544b', '#9e806b', '#85695c', '#8c6152'].map(hx),
-  stone: ['#b5ac98', '#a8a192', '#9a978e', '#bfb8a7', '#aca08a', '#8e8c86', '#a2977f'].map(hx),
-  tower: ['#b6ad9a', '#8f8e88', '#a8937a', '#7b6355', '#c1bbab', '#9c9281', '#80847f', '#a89d87', '#6c625a', '#b0a48c'].map(hx),
+  // painted wood and stucco: muted pastels, the way the city's rowhouses are actually painted
+  house: ['#dccdae', '#cbbd92', '#bcc7ab', '#abbfc8', '#d6b3a2', '#cba68f', '#bbacc8', '#e3d9c6', '#a2b9ac', '#d9c48d', '#c79281', '#93a8ba', '#e6d6bf', '#b9a892', '#c9d2c0', '#d8bfc0'].map(hx),
+  brick: ['#9a6652', '#8a5a49', '#a67a64', '#7f5e52', '#b08a72', '#96705f', '#9c6a58'].map(hx),
+  stone: ['#cfc5ae', '#c2b9a5', '#b8b2a3', '#d8cfbb', '#c7b99f', '#aaa69c', '#bfb399'].map(hx),
+  tower: ['#d0c7b3', '#b0aca2', '#c2ad90', '#96796a', '#d9d2c0', '#b8ad99', '#a0a39c', '#c4b89f', '#8a7d72', '#cbbfa5'].map(hx),
   dark: ['#3b3733', '#4a433c', '#55504a'].map(hx),
-  roof: ['#4a4743', '#57534d', '#3f3d3a', '#625c53', '#4f4a47'].map(hx),
-  pitch: ['#5b4a40', '#4a4f52', '#6b5446', '#3e4245', '#7a5a48', '#525a4e'].map(hx),
+  roof: ['#7d786f', '#8c867a', '#6f6c66', '#989082', '#807a73'].map(hx),
+  pitch: ['#6b584c', '#5a5f62', '#7b6252', '#4e5255', '#8a6854', '#626a5e', '#9c5f48'].map(hx),
   crown: ['#6f9384', '#b08d57', '#4a5057', '#8a9a8f', '#c9c0ad', '#7d6a50'].map(hx),
-  awning: ['#3f5a47', '#6e2f2f', '#2f3f5a', '#a8873f', '#5a4a3a', '#7a3f2a', '#394a4f'].map(hx),
-  shed: ['#7f5a48', '#8a8c83', '#6f7a70', '#9a8a70', '#665a52', '#85705c'].map(hx),
-  metal: ['#8b9092', '#737a7c', '#a09a8c'].map(hx),
-  tree: ['#8f5f33', '#a07c3a', '#814f34', '#a38c48', '#70733f', '#5c6b43', '#93703c', '#785634', '#50603d', '#66713f'].map(hx),
-  trunk: hx('#4b3d32'), glassDark: hx('#20262b'), concrete: hx('#a09c92'), stoneLight: hx('#d2ccbc'),
+  awning: ['#3f6a52', '#8a3a36', '#35507a', '#b8923f', '#6a5440', '#9a4f32', '#3f5a62', '#c9b99a', '#7a4a6a'].map(hx),
+  shed: ['#8f6a56', '#9a9c92', '#7f8a80', '#aa9a80', '#766a60', '#958068', '#b3ab98', '#6f7f8a'].map(hx),
+  metal: ['#9aa0a2', '#838a8c', '#b0aa9c'].map(hx),
+  tree: ['#5f7a45', '#6f8a4c', '#4f6b3f', '#7a9052', '#58764a', '#86964f', '#a8913f', '#b8743a', '#4a6340', '#93a25a'].map(hx),
+  neon: ['#e8553f', '#f2a83a', '#4fc7c9', '#ea6aa8', '#7fd86b', '#f4e6a6', '#6f93ea', '#f07a3a'].map(hx),
+  door: ['#7a2f2a', '#2f4a5a', '#3f5a3f', '#5a3f2a', '#c9a23f', '#2a2a2e', '#6a3f5a', '#b5532f'].map(hx),
+  box: ['#9a4a3e', '#44627a', '#b89a4a', '#52705c', '#8a8f92', '#a5633a', '#5a5270', '#cfc9bb'].map(hx),
+  car: ['#8c8f8a', '#2f3438', '#d6d2c6', '#6f1f1c', '#24364f', '#4c5a4a', '#a89f8c', '#b9b3a3'].map(hx),
+  trunk: hx('#4b3d32'), glassDark: hx('#20262b'), concrete: hx('#aaa69b'), stoneLight: hx('#d8d2c2'), iron: hx('#2e2d2c'), asphalt: hx('#56555a'), tile: hx('#a85f44'),
 };
 
 // ---- growable mesh builder -------------------------------------------------------------------
@@ -123,15 +128,19 @@ function cyl(m, cx, cz, r0, r1, y0, y1, c, sides = 8, cap = true) {
     for (let i = 0; i < sides; i++) m.tri(c0, b2 + i + 1, b2 + i);
   }
 }
-function blob(m, cx, cy, cz, rx, ry, c) {
-  setWin(m, null);
+function blob(m, cx, cy, cz, rx, ry, c, leaf = false) {
+  setWin(m, null); if (leaf) m.w[3] = 255; // foliage marker: floodlights skip it
   const base = m.n;
   for (const v of ICO_V) m.v(cx + v[0] * rx, cy + v[1] * ry, cz + v[2] * rx, v[0], v[1], v[2], 0, 0, sh(c, 0.8 + 0.3 * v[1]));
   for (let i = 0; i < 60; i += 3) m.tri(base + ICO_F[i], base + ICO_F[i + 1], base + ICO_F[i + 2]);
 }
+// A crown of three overlapping lumps reads as foliage; a single one reads as a ball on a stick.
 export function tree(m, x, z, y, h, r, c) {
-  box(m, x - 0.2, z - 0.2, x + 0.2, z + 0.2, y - 0.5, y + h * 0.42, P.trunk, null);
-  blob(m, x, y + h * 0.62, z, r * 1.15, h * 0.42, c);
+  box(m, x - 0.18, z - 0.18, x + 0.18, z + 0.18, y - 0.5, y + h * 0.45, P.trunk, null);
+  const k = (Math.abs(x * 13.7 + z * 7.3) % 1), a = k * 6.283, ox = Math.cos(a) * r * 0.55, oz = Math.sin(a) * r * 0.55;
+  blob(m, x, y + h * 0.66, z, r * 1.0, h * 0.36, c, true);
+  blob(m, x + ox, y + h * 0.54, z + oz, r * 0.78, h * 0.26, sh(c, 0.9), true);
+  blob(m, x - ox * 0.8, y + h * 0.6, z - oz * 0.8, r * 0.7, h * 0.24, sh(c, 1.08), true);
 }
 export const TREE_COLORS = P.tree;
 
@@ -145,7 +154,7 @@ function frame(b) {
   let lo = 1e9, hi = -1e9;
   for (const [px, pz] of [[x0, z0], [x0 + wx, z0], [x0, z0 + wz], [x0 + wx, z0 + wz], [cx, cz]]) { const h = heightAt(px, pz); lo = Math.min(lo, h); hi = Math.max(hi, h); }
   const fy = (heightAt(X(0, 0), Z(0, 0)) + heightAt(X(W, 0), Z(W, 0))) / 2; // street-side elevation
-  return { W, D, X, Z, rot, f, lo, baseY: Math.max(fy, lo + (hi - lo) * 0.6) + 0.25, alongX: !(f & 1) };
+  return { W, D, X, Z, rot, f, lo, baseY: Math.max(fy, lo + (hi - lo) * 0.6) + 0.25, alongX: !(f & 1), cs, sn };
 }
 export const lotBase = (b) => frame(b).baseY;
 // local box helper
@@ -160,16 +169,48 @@ function lroof(m, F, lx0, lz0, lx1, lz1, y0, h, rc, wc, gable, ridgeLocal) {
 }
 const lcyl = (m, F, lx, lz, r0, r1, y0, y1, c, sides, cap) => cyl(m, F.X(lx, lz), F.Z(lx, lz), r0, r1, y0, y1, c, sides, cap);
 const ltree = (m, F, lx, lz, h, r, c) => { const x = F.X(lx, lz), z = F.Z(lx, lz); tree(m, x, z, heightAt(x, z), h, r, c); };
+// Prism over a convex local footprint. pts run front-right, front-left, back-left, back-right (the same sense as lbox).
+// open: leave out the wall from the last point back to the first (for bays that sit against a facade).
+function lpoly(m, F, pts, y0, y1, wc, rc, W = null, open = false) {
+  const n = pts.length, wx = pts.map((p) => F.X(p[0], p[1])), wz = pts.map((p) => F.Z(p[0], p[1]));
+  for (let i = 0; i < (open ? n - 1 : n); i++) {
+    const j = (i + 1) % n, dx = wx[j] - wx[i], dz = wz[j] - wz[i], len = Math.hypot(dx, dz); if (len < 0.01) continue;
+    const nx = -dz / len, nz = dx / len; let u1 = 0, v0 = 0, v1 = 0;
+    setWin(m, W); if (W) { u1 = Math.max(1, Math.round(len / W.bay)); v0 = (y0 - W.base) / W.fh; v1 = (y1 - W.base) / W.fh; }
+    const a = m.v(wx[i], y0, wz[i], nx, 0, nz, 0, v0, wc), b = m.v(wx[j], y0, wz[j], nx, 0, nz, u1, v0, wc), c = m.v(wx[j], y1, wz[j], nx, 0, nz, u1, v1, wc), d = m.v(wx[i], y1, wz[i], nx, 0, nz, 0, v1, wc);
+    m.quad(a, b, c, d);
+  }
+  if (rc) { setWin(m, null); const b0 = m.n; for (let i = 0; i < n; i++) m.v(wx[i], y1, wz[i], 0, 1, 0, 0, 0, rc); for (let i = 1; i + 1 < n; i++) m.tri(b0, b0 + i + 1, b0 + i); }
+}
+// Curved roof over a local rectangle: the arc runs across lx when along is 'z' (ridge front to back), across lz otherwise.
+function lbarrel(m, F, lx0, lz0, lx1, lz1, y0, rise, rc, wc, along = 'z', seg = 6) {
+  setWin(m, null);
+  const P2 = (u, v) => (along === 'z' ? [lx0 + (lx1 - lx0) * u, lz0 + (lz1 - lz0) * v] : [lx0 + (lx1 - lx0) * v, lz0 + (lz1 - lz0) * u]);
+  const span = along === 'z' ? lx1 - lx0 : lz1 - lz0, ring = [];
+  for (let k = 0; k <= seg; k++) { const t = k / seg, a = Math.PI * t; ring.push([t, y0 + Math.sin(a) * rise, -Math.cos(a) * rise * 2 / span, Math.sin(a)]); }
+  for (let k = 0; k < seg; k++) {
+    const A = ring[k], B = ring[k + 1], p00 = P2(A[0], 0), p01 = P2(A[0], 1), p10 = P2(B[0], 0), p11 = P2(B[0], 1);
+    const lnx = (A[2] + B[2]) / 2, lny = (A[3] + B[3]) / 2 + 0.2, ll2 = Math.hypot(lnx, lny), ax = along === 'z' ? lnx / ll2 : 0, az = along === 'z' ? 0 : lnx / ll2;
+    const nx = F.cs * ax - F.sn * az, nz = F.sn * ax + F.cs * az, ny = lny / ll2;
+    const a = m.v(F.X(...p00), A[1], F.Z(...p00), nx, ny, nz, 0, 0, rc), b = m.v(F.X(...p01), A[1], F.Z(...p01), nx, ny, nz, 0, 0, rc), c = m.v(F.X(...p11), B[1], F.Z(...p11), nx, ny, nz, 0, 0, rc), d = m.v(F.X(...p10), B[1], F.Z(...p10), nx, ny, nz, 0, 0, rc);
+    m.quad(a, b, c, d); m.quad(d, c, b, a);
+  }
+  for (const v of [0, 1]) { // end walls
+    const lnz = v ? 1 : -1, ax = along === 'z' ? 0 : lnz, az = along === 'z' ? lnz : 0, nx = F.cs * ax - F.sn * az, nz = F.sn * ax + F.cs * az, b0 = m.n;
+    for (const R of ring) { const p = P2(R[0], v); m.v(F.X(...p), R[1], F.Z(...p), nx, 0, nz, 0, 0, wc); }
+    for (let k = 1; k + 1 < ring.length; k++) { m.tri(b0, b0 + k, b0 + k + 1); m.tri(b0, b0 + k + 1, b0 + k); }
+  }
+}
 
-// window styles: bits 0-1 lighting profile (0 home, 1 office, 2 shop, 3 industry), 8 storefront, 16 deco piers, 64 floodlit
-const ST = { home: 0, office: 1, shop: 2, ind: 3, front: 8, deco: 16, flood: 64 };
+// window styles: bits 0-1 lighting profile (0 home, 1 office, 2 shop, 3 industry), 8 storefront, 16 deco piers, 32 self-lit (signs, lamps), 64 floodlit
+const ST = { home: 0, office: 1, shop: 2, ind: 3, front: 8, deco: 16, glow: 32, flood: 64 };
 
 function roofClutter(m, F, r, lx0, lz0, lx1, lz1, y, amount, roofC) {
   const w = lx1 - lx0, d = lz1 - lz0; if (w < 5 || d < 5) return;
   for (let k = 0; k < amount; k++) {
     const kind = r(), px = lx0 + 1.5 + r() * (w - 3), pz = lz0 + 1.5 + r() * (d - 3);
     if (kind < 0.3) { const s = 1.2 + r() * 1.6; lbox(m, F, px - s, pz - s * 0.7, px + s, pz + s * 0.7, y, y + 2.2 + r() * 1.4, sh(roofC, 1.35), sh(roofC, 0.9)); }
-    else if (kind < 0.55 && w > 8) { // water tank on a stand
+    else if (kind < 0.42 && w > 8) { // water tank on a stand
       const rr = 1.3 + r() * 0.5; lbox(m, F, px - rr * 0.7, pz - rr * 0.7, px + rr * 0.7, pz + rr * 0.7, y, y + 1.8, P.dark[0], null);
       lcyl(m, F, px, pz, rr, rr, y + 1.8, y + 4.6, hx('#6a5546'), 8, false); lcyl(m, F, px, pz, rr * 1.05, 0, y + 4.6, y + 5.7, hx('#4c423a'), 8, false);
     } else if (kind < 0.8) { const s = 0.7 + r() * 0.8; lbox(m, F, px - s, pz - s, px + s, pz + s, y, y + 0.9 + r() * 0.6, P.metal[r.int(0, 2)], P.metal[0]); }
@@ -180,9 +221,9 @@ function cornice(m, F, lx0, lz0, lx1, lz1, y, h, c, out = 0.35, top = null) { lb
 
 // ---- design: decide the headline numbers from the seed (used for capacity before any mesh exists) ----
 const FLOORS = { // [zone][level-1] = [min, max]
-  1: [[2, 2], [3, 3]], 2: [[3, 5], [5, 8], [8, 13], [12, 19], [18, 30]], 3: [[1, 2], [2, 3]], 4: [[4, 7], [7, 12], [12, 20], [18, 28], [26, 38]],
-  5: [[2, 4], [4, 7]], 6: [[6, 10], [10, 18], [18, 30], [30, 46], [46, 72]], 7: [[1, 1], [1, 2]], 8: [[1, 2], [2, 4], [3, 6]],
-  9: [[2, 4], [4, 8], [8, 16], [16, 30], [30, 58]], 10: [[1, 3], [3, 6], [6, 12], [10, 20]], 11: [[3, 5], [5, 9], [9, 16], [14, 26]], 12: [[1, 1], [1, 2], [2, 3]],
+  1: [[2, 2], [3, 3]], 2: [[3, 4], [4, 6], [5, 7], [9, 15], [16, 28]], 3: [[1, 2], [2, 3]], 4: [[3, 6], [5, 7], [9, 16], [16, 26], [26, 38]],
+  5: [[2, 4], [4, 7]], 6: [[4, 8], [8, 14], [16, 28], [28, 44], [44, 70]], 7: [[1, 1], [1, 2]], 8: [[1, 2], [2, 4], [3, 6]],
+  9: [[2, 4], [4, 8], [8, 16], [16, 30], [30, 58]], 10: [[1, 3], [3, 6], [6, 12], [10, 20]], 11: [[3, 4], [4, 6], [6, 7], [10, 20]], 12: [[1, 1], [1, 2], [2, 3]],
 };
 export const MAX_LEVEL = { 1: 2, 2: 5, 3: 2, 4: 5, 5: 2, 6: 5, 7: 2, 8: 3, 9: 5, 10: 4, 11: 4, 12: 3 };
 // hooks filled in by structures.js: special structures and per-building styles
@@ -203,9 +244,9 @@ export function design(b) {
   let variant = r.int(0, 99), label, cov = 0.7, per = 40;
   if (z === 1) {
     const row = Math.min(b.w, b.d) === 1 || (b.front & 1 ? b.d : b.w) === 1;
-    variant = row ? variant % 3 : 3 + (variant % 2);
-    label = ['Victorian rowhouse', 'Edwardian flats', 'Stucco rowhouse', 'Detached house', 'Shingle house'][variant]; cov = row ? 0.6 : 0.34; per = 66;
-  } else if (z === 2) { label = floors <= 6 ? 'Walk-up apartments' : floors <= 14 ? 'Apartment house' : 'Apartment tower'; cov = floors > 14 ? 0.55 : 0.68; per = 58; }
+    variant = row ? (b.st === 2 ? [2, 2, 6, 6, 1] : b.st === 1 ? [0, 0, 1, 5, 5] : [0, 1, 2, 5, 6])[variant % 5] : 3 + (variant % 2); // the neighbourhood style leans the mix
+    label = ['Victorian rowhouse', 'Edwardian flats', 'Stucco rowhouse', 'Detached house', 'Shingle house', 'Italianate rowhouse', 'Marina-style house'][variant]; cov = row ? 0.6 : 0.34; per = 66;
+  } else if (z === 2) { label = floors <= 4 ? 'Bay-window flats' : floors <= 7 ? 'Apartment building' : floors <= 15 ? 'Apartment house' : 'Apartment tower'; cov = floors > 14 ? 0.55 : 0.68; per = 58; }
   else if (z === 3) { label = b.w * b.d >= 6 ? 'Shopfront row' : floors > 1 ? 'Shop with flats' : 'Corner store'; cov = 0.8; per = 55; }
   else if (z === 4) { label = floors <= 7 ? 'Department store' : floors <= 14 ? 'Hotel' : 'Hotel tower'; cov = floors > 12 ? 0.6 : 0.82; per = 50; }
   else if (z === 5) { label = floors <= 3 ? 'Office building' : 'Office block'; cov = 0.75; per = 30; }
@@ -213,15 +254,18 @@ export function design(b) {
   else if (z === 7) { label = variant < 50 ? 'Workshop' : 'Warehouse'; cov = 0.7; per = 90; }
   else if (z === 9) { label = floors <= 4 ? 'Startup loft' : floors <= 12 ? 'Tech office' : floors <= 30 ? 'Tech tower' : 'Tech headquarters tower'; cov = floors > 28 ? 0.5 : 0.7; per = 22; }
   else if (z === 10) { label = floors <= 3 ? 'Restaurants and galleries' : floors <= 8 ? 'Boutique hotel' : 'Resort hotel'; cov = 0.72; per = 46; }
-  else if (z === 11) { label = floors <= 6 ? 'Flats over shops' : 'Mixed-use block'; cov = 0.7; per = 60; }
+  else if (z === 11) { label = floors <= 7 ? 'Flats over shops' : 'Mixed-use block'; cov = 0.7; per = 60; }
   else if (z === 12) { label = variant < 40 ? 'Pier shed' : variant < 75 ? 'Container yard' : 'Ship repair'; cov = 0.6; per = 110; floors = Math.min(floors, 3); }
   else { label = lv >= 2 && variant < 60 ? 'Mill' : 'Factory'; cov = 0.6; per = 80; floors = Math.min(floors, 6); }
+  const kind = ext.kind ? ext.kind(b, floors) : null; // shops and industry come in several kinds with their own shape
+  if (kind) { label = kind.label; if (kind.floors) floors = Math.min(floors, kind.floors); if (kind.cov) cov = kind.cov; }
   const fa = area * cov * floors, cap = Math.max(1, Math.round(fa / per));
   const nr = rng(b.seed + 77);
   let name = '';
   if (z === 2 && floors > 6) name = pickName(nr, N1, ['Arms', 'Court', 'Apartments', 'Towers', 'Terrace', 'House', 'Manor']);
   else if (z === 4) name = pickName(nr, N1, floors > 7 ? ['Hotel', 'Plaza Hotel', 'Grand'] : ['Emporium', 'Department Store', 'Arcade']);
   else if (z === 6 && floors > 10) name = pickName(nr, N1, ['Building', 'Tower', 'Trust Building', 'Exchange', 'Mutual Building', 'Telephone Building']);
+  else if (kind && kind.names) name = pickName(nr, N1, kind.names);
   else if (z === 8) name = pickName(nr, N1, ['Iron Works', 'Cannery', 'Sugar Refinery', 'Brewery', 'Foundry', 'Ship Supply']);
   else if (z === 9 && floors > 12) name = pickName(nr, N1, ['Labs', 'Systems', 'Center', 'Campus', 'Tower']);
   else if (z === 10 && floors > 3) name = pickName(nr, N1, ['Inn', 'Hotel', 'Resort', 'House']);
@@ -350,7 +394,7 @@ function crown(m, F, b, r, kind, a0, c0, a1, c1, y, o) {
 }
 
 function emitApartment(m, F, b, s, r) {
-  const f = s.floors, { W, D } = F, brick = r.chance(f > 12 ? 0.3 : 0.65), wall = brick ? r.pick(P.brick) : f > 12 ? r.pick(P.tower) : r.pick(P.stone);
+  const f = s.floors, { W, D } = F, brick = r.chance(f > 12 ? 0.2 : 0.3), wall = brick ? r.pick(P.brick) : f > 12 ? r.pick(P.tower) : r.pick(P.stone);
   const shops = r.chance(0.3), tiers = [];
   if (f <= 9) tiers.push({ floors: f });
   else if (f <= 16) tiers.push({ floors: Math.round(f * 0.7) }, { floors: 99, inset: 3, frontOnly: r.chance(0.5) });
@@ -373,6 +417,7 @@ function emitHotel(m, F, b, s, r) {
     crown: f > 14 ? r.pick(['mansard', 'hip', 'ziggurat']) : f > 7 ? r.pick(['mansard', 'flat', 'hip']) : r.pick(['parapet', 'flat']),
   });
   const aw = r.pick(P.awning); lbox(m, F, F.W * 0.3, -0.9, F.W * 0.7, 0.5, F.baseY + 3.6, F.baseY + 4.0, aw, sh(aw, 0.8)); // marquee
+  if (r.chance(0.6)) { const nc = r.pick(P.neon), sx = F.W * r.range(0.12, 0.88); lbox(m, F, sx - 0.2, -0.9, sx + 0.2, 0.3, F.baseY + 6, F.baseY + 6 + Math.min(14, f * 1.6), nc, sh(nc, 0.7), { bay: 1, fh: 1, base: 0, ww: 0, wh: 0, style: ST.glow, seed: 1 }); } // blade sign
   if (f > 7 && r.chance(0.6)) lbox(m, F, F.W * 0.2, 1.6, F.W * 0.8, 1.9, top + 2.2, top + 4.6, P.dark[0], null, { bay: 1, fh: 1, base: 0, ww: 0, wh: 0, style: ST.flood, seed: 1 }); // roof sign
 }
 function emitOffice(m, F, b, s, r) {
@@ -435,7 +480,7 @@ export function emitBuilding(m, b) {
   if (b.sp) { if (ext.emitSpecial) ext.emitSpecial(m, F, b, r); m.dur = 1.6; return; }
   const st = ext.styles[b.st | 0], n0 = m.n; let saved = null;
   if (st && st.pal) { saved = {}; if (!st.fit) { st.fit = {}; for (const k in st.pal) { const src = st.pal[k], n = Math.max(src.length, P[k] ? P[k].length : 0); st.fit[k] = Array.from({ length: n }, (_, q) => src[q % src.length]); } } for (const k in st.pal) { saved[k] = P[k]; P[k] = st.fit[k]; } } // style palettes are cycled to the length the emitters index into
-  switch (b.zone) {
+  if (!(ext.emit && ext.emit(m, F, b, s, r))) switch (b.zone) {
     case 1: s.variant < 3 ? emitRowhouse(m, F, b, s, r) : emitHouse(m, F, b, s, r); break;
     case 2: case 11: emitApartment(m, F, b, s, r); break;
     case 3: emitShops(m, F, b, s, r); break;
@@ -453,10 +498,10 @@ export function emitBuilding(m, b) {
   if (b.sign) ext.sign && ext.sign(m, F, b);
   m.dur = 1.6;
 }
-export const prim = { box, roof, cyl, blob, tree, lbox, lroof, lcyl, ltree, cornice, roofClutter, frame, P, ST, hx, sh, mixc };
+export const prim = { box, roof, cyl, blob, tree, lbox, lroof, lcyl, ltree, lpoly, lbarrel, cornice, roofClutter, yardTrees, frame, P, ST, hx, sh, mixc, setWin };
 
 // ---- material ----------------------------------------------------------------------------------
-export const buildingUniforms = { uTime: { value: 0 }, uNight: { value: 0 }, uLit: { value: new THREE.Vector4(0, 0, 0, 0) }, uSkyRefl: { value: new THREE.Color(0.5, 0.6, 0.7) } };
+export const buildingUniforms = { uTime: { value: 0 }, uNight: { value: 0 }, uLit: { value: new THREE.Vector4(0, 0, 0, 0) }, uSkyRefl: { value: new THREE.Color(0.5, 0.6, 0.7) }, uGlow: { value: new THREE.Vector3(0.4, 1.6, 1) } }; // uGlow: floodlight gain, sign and lamp gain, window gain
 export function makeBuildingMaterial() {
   const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.88, metalness: 0 });
   mat.onBeforeCompile = (shd) => {
@@ -469,7 +514,7 @@ export function makeBuildingMaterial() {
       float gk = clamp((uTime - aAnim.x) / max(aAnim.z, 0.2), 0.0, 1.0); gk = 1.0 - (1.0 - gk) * (1.0 - gk);
       transformed.y = aAnim.y + (transformed.y - aAnim.y) * gk;`);
     shd.fragmentShader = shd.fragmentShader.replace('#include <common>', `#include <common>
-      varying vec2 vUv2; varying vec4 vWin; uniform float uNight; uniform vec4 uLit; uniform vec3 uSkyRefl;
+      varying vec2 vUv2; varying vec4 vWin; uniform float uNight; uniform vec4 uLit; uniform vec3 uSkyRefl; uniform vec3 uGlow;
       float h21(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
       // box-filtered pulse train: window of width w starting at offset o in each unit cell
       float pint(float x, float o, float w){ return floor(x) * w + clamp(fract(x) - o, 0.0, w); }
@@ -478,7 +523,8 @@ export function makeBuildingMaterial() {
       {
         float style = floor(vWin.z * 255.0 + 0.5);
         float prof = mod(style, 4.0), front = mod(floor(style / 8.0), 2.0), deco = mod(floor(style / 16.0), 2.0), flood = mod(floor(style / 64.0), 2.0);
-        if (flood > 0.5) totalEmissiveRadiance += diffuseColor.rgb * uNight * 0.4;
+        if (flood > 0.5) totalEmissiveRadiance += diffuseColor.rgb * uNight * uGlow.x;
+        if (mod(floor(style / 32.0), 2.0) > 0.5) totalEmissiveRadiance += diffuseColor.rgb * (0.08 + uNight * uGlow.y);
         if (vWin.x > 0.004 && vUv2.y > 0.0) {
           vec2 fw = max(fwidth(vUv2), vec2(1e-4));
           float ww = vWin.x, wh = vWin.y, sill = front > 0.5 ? 0.06 : (1.0 - wh) * 0.42;
@@ -505,7 +551,8 @@ export function makeBuildingMaterial() {
           vec3 glass = mix(vec3(0.035, 0.045, 0.055), uSkyRefl, 0.16 + 0.5 * fres) * (0.75 + 0.5 * r2);
           diffuseColor.rgb = mix(diffuseColor.rgb, glass, mask);
           roughnessFactor = mix(roughnessFactor, 0.12, mask);
-          totalEmissiveRadiance += lc * lc * (lit * mask * uNight * (0.35 + 0.75 * r2));
+          totalEmissiveRadiance += lc * lc * (lit * mask * uNight * (0.35 + 0.75 * r2) * uGlow.z);
+          totalEmissiveRadiance += diffuseColor.rgb * vec3(1.0, 0.66, 0.36) * (uNight * 0.2 * exp(-max(vUv2.y, 0.0) * 0.5) * (1.0 - mask));   // lamp light spilling up the lowest storeys
         }
       }`);
   };

@@ -138,6 +138,7 @@ export function makeUI(game) {
   $('ovList').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) { game.setOverlay(b.dataset.v); syncPops(); } });
   function syncPops() {
     document.querySelectorAll('#ovList button').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.v === (game.overlay || 'none'))));
+    document.querySelectorAll('#nightMode button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === (city.cfg.night === 'neon' ? 'neon' : 'real'))));
     const c = city.cfg; $('wxAuto').checked = c.wxAuto; $('wxFog').checked = c.fog; $('wxRain').checked = c.rain; $('wxSun').checked = c.sunsets; $('fogAmt').value = c.fogAmt; $('rainAmt').value = c.rainAmt;
   }
   $('wxAuto').addEventListener('change', (e) => { city.cfg.wxAuto = e.target.checked; city.wx.manual = 0; });
@@ -145,6 +146,7 @@ export function makeUI(game) {
   $('wxSun').addEventListener('change', (e) => { city.cfg.sunsets = e.target.checked; game.sky.wx.sunset = e.target.checked ? 0.8 : 0; });
   $('fogAmt').addEventListener('input', (e) => { city.cfg.fogAmt = +e.target.value; }); $('rainAmt').addEventListener('input', (e) => { city.cfg.rainAmt = +e.target.value; });
   $('wxNow').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) game.setWeather(b.dataset.v); });
+  $('nightMode').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) { city.cfg.night = b.dataset.v; syncPops(); } });
   $('topMin').addEventListener('click', () => { city.cfg.topMin = !city.cfg.topMin; for (const p of POPS) $(p).hidden = true; document.querySelectorAll('[data-pop]').forEach((q) => q.setAttribute('aria-expanded', 'false')); refresh(true); });
   $('soundBtn').addEventListener('click', () => { const on = !game.audio.on; game.audio.setOn(on); city.cfg.sound = on; syncSound(); });
   function syncSound() { const b = $('soundBtn'); b.setAttribute('aria-pressed', String(game.audio.on)); b.innerHTML = `<i data-lucide="${game.audio.on ? 'volume-2' : 'volume-x'}"></i>`; b.title = game.audio.on ? 'Sound on' : 'Sound off'; icons(); }
@@ -237,7 +239,7 @@ export function makeUI(game) {
     try {
       if (act === 'load') {
         const map = (r.meta && r.meta.map) || 'real';
-        if (map !== MAPMODE) { const u = new URL(location.href); u.search = ''; if (map !== 'real') u.searchParams.set('map', map); u.searchParams.set('load', id); location.href = u.toString(); return; }
+        if (map !== MAPMODE) { const u = new URL(location.href); u.search = ''; if (map !== 'region') u.searchParams.set('map', map); u.searchParams.set('load', id); location.href = u.toString(); return; }
         await game.loadCloud(id, r.name); if (!fromTitle) openMenu(false);
       } else if (act === 'over') { await cloudSave(id, r.name); }
       else if (act === 'share') { await cloud.share(id, true); await renderCloud(); toast('Share link created. Anyone with the link can view this city.'); }
@@ -285,9 +287,11 @@ export function makeUI(game) {
 
   // ---- start screen ------------------------------------------------------------------------------------
   const q = new URLSearchParams(location.search), pick = (k, d, ok) => (ok.includes(q.get(k)) ? q.get(k) : d);
-  const S = { map: MAPMODE, start: pick('start', 'empty', ['empty', 'grid', 'south', 'demo']), era: pick('era', 'today', Object.keys(ERAS)), money: pick('money', 'unlimited', ['unlimited', 'budget']), growth: pick('growth', '1', ['0.5', '1', '2']), traffic: pick('traffic', 'cosmetic', ['cosmetic', 'sim']), lv: pick('lv', 'on', ['on', 'off']), ui: pick('ui', 'bottom', ['bottom', 'side', 'hide']), cam: pick('cam', 'angled', ['angled', 'top', 'street']), gfx: pick('gfx', 'auto', ['low', 'medium', 'high', 'ultra', 'auto']), fog: pick('fog', 'on', ['on', 'off']), rain: pick('rain', 'on', ['on', 'off']), sunsets: pick('sunsets', 'on', ['on', 'off']) };
+  const S = { map: MAPMODE, areas: pick('areas', 'grow', ['grow', 'open']), night: pick('night', 'real', ['real', 'neon']), start: pick('start', 'empty', ['empty', 'grid', 'south', 'demo']), era: pick('era', 'today', Object.keys(ERAS)), money: pick('money', 'unlimited', ['unlimited', 'budget']), growth: pick('growth', '1', ['0.5', '1', '2']), traffic: pick('traffic', 'cosmetic', ['cosmetic', 'sim']), lv: pick('lv', 'on', ['on', 'off']), ui: pick('ui', 'bottom', ['bottom', 'side', 'hide']), cam: pick('cam', 'angled', ['angled', 'top', 'street']), gfx: pick('gfx', 'auto', ['low', 'medium', 'high', 'ultra', 'auto']), fog: pick('fog', 'on', ['on', 'off']), rain: pick('rain', 'on', ['on', 'off']), sunsets: pick('sunsets', 'on', ['on', 'off']) };
   const SETUP = [
-    ['map', 'Map', [['real', 'Real-scale SF', 'The 7 by 7 mile city at true size'], ['compact', 'Compressed SF', 'Same shape at half size. Fills in faster.'], ['bay', 'Bay Area', 'The city plus Marin and the East Bay shore, at reduced scale']]],
+    ['map', 'Map', [['region', 'SF and neighbors', 'The city at 60% scale. Daly City, South City, Oakland, Berkeley and Marin sit around it.'], ['real', 'Real-scale SF', 'The 7 by 7 mile city at true size'], ['compact', 'Compressed SF', 'Same shape at half size. Fills in faster.']]],
+    ['areas', 'Nearby cities', [['grow', 'Open as you grow', 'Daly City opens at 5,000 residents, then South City, Oakland, Berkeley and Marin'], ['open', 'All open']]],
+    ['night', 'Night lights', [['real', 'Realistic', 'Amber street lamps and a soft glow'], ['neon', 'Stylized', 'Bloom, neon signs and bright traffic']]],
     ['start', 'Start', [['empty', 'Empty land'], ['grid', 'Street grid', 'The real main streets, already drawn'], ['south', 'Highway from the south', 'Empty, with the freeways coming up the peninsula']]],
     ['era', 'Era', Object.entries(ERAS).map(([k, e]) => [k, e.label, e.note])],
     ['money', 'Money', [['unlimited', 'Unlimited'], ['budget', 'Budget', 'Taxes pay for what you build']]],
@@ -304,7 +308,7 @@ export function makeUI(game) {
   const titleErr = (m) => { const e = $('titleErr'); e.textContent = m || ''; e.hidden = !m; };
   function go(start) {
     const o = { ...S, start: start || S.start };
-    if (o.map !== MAPMODE) { const u = new URL(location.href); u.search = ''; for (const k in o) if (k !== 'map' || o.map !== 'real') u.searchParams.set(k, o[k]); u.searchParams.set('go', '1'); location.href = u.toString(); return; }
+    if (o.map !== MAPMODE) { const u = new URL(location.href); u.search = ''; for (const k in o) if (k !== 'map' || o.map !== 'region') u.searchParams.set(k, o[k]); u.searchParams.set('go', '1'); location.href = u.toString(); return; }
     game.startNew(o); game.begin();
   }
   $('startGo').addEventListener('click', () => go()); $('startDemo').addEventListener('click', () => go('demo'));

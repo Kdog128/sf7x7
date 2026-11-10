@@ -3,23 +3,46 @@ import * as THREE from 'three';
 import { LAND as LAND0, FAR_LAND as FAR0, PARK_GGP as GGP0, PARK_PRESIDIO as PRE0, LON0, LAT0, MX, MZ } from './data/geo.js';
 import { clamp, lerp, smoothstep, fbm, noise2, pointInRing, hex2lin, hash2 } from './util.js';
 
-// Map size is fixed for the life of the page: 'real' (about 7x7 miles), 'compact' (half scale) or 'bay' (SF + Marin + East Bay at 0.4 scale).
-export const MAPMODE = ['real', 'compact', 'bay'].includes(globalThis.__MAP7) ? globalThis.__MAP7 : 'real';
-export const K = MAPMODE === 'compact' ? 0.5 : MAPMODE === 'bay' ? 0.4 : 1;
+// Map size is fixed for the life of the page: 'region' (San Francisco at 0.6 scale with Daly City, South City, Oakland, Berkeley and Marin around it),
+// 'real' (the 7x7 mile city at true size) or 'compact' (half scale).
+export const MAPMODE = ['region', 'real', 'compact'].includes(globalThis.__MAP7) ? globalThis.__MAP7 : 'region';
+export const K = MAPMODE === 'compact' ? 0.5 : MAPMODE === 'region' ? 0.6 : 1;
 const HS = K === 1 ? 1 : Math.sqrt(K) * 1.05; // hills keep some of their height when the map shrinks
 export const MAP = MAPMODE === 'compact' ? { minX: -4560, maxX: 4080, minZ: -4560, maxZ: 3600, G: 24 }
-  : MAPMODE === 'bay' ? { minX: -5760, maxX: 8400, minZ: -6720, maxZ: 3120, G: 24 }
+  : MAPMODE === 'region' ? { minX: -5760, maxX: 11520, minZ: -7440, maxZ: 8400, G: 24 }
   : { minX: -9120, maxX: 8160, minZ: -9120, maxZ: 7200, G: 24 };
 export const SFB = { minX: -9120 * K, maxX: 8160 * K, minZ: -9120 * K, maxZ: 7200 * K }; // the city itself, in every map mode
 const scaleRings = (rs) => (K === 1 ? rs : rs.map((r) => r.map((v) => v * K)));
 // the city and county outlines come from different sources and leave a hairline gap at the county line: cover it
 const SEAM = [-5750, 6780, 3650, 6780, 3650, 6930, -5750, 6930];
-const LAND = scaleRings(LAND0), FAR_LAND = scaleRings([...FAR0, SEAM]), PARK_GGP = scaleRings(GGP0), PARK_PRESIDIO = scaleRings(PRE0);
+// the far shores are traced coarsely; corner-cutting rounds off their stair steps
+const chaikin = (r) => { const o = []; for (let i = 0, n = r.length; i < n; i += 2) { const ax = r[i], az = r[i + 1], bx = r[(i + 2) % n], bz = r[(i + 3) % n]; o.push(ax * 0.75 + bx * 0.25, az * 0.75 + bz * 0.25, ax * 0.25 + bx * 0.75, az * 0.25 + bz * 0.75); } return o; };
+const LAND = scaleRings(LAND0), FAR_LAND = scaleRings([...FAR0.map((r) => chaikin(chaikin(r))), SEAM]), PARK_GGP = scaleRings(GGP0), PARK_PRESIDIO = scaleRings(PRE0);
 export const NX = (MAP.maxX - MAP.minX) / MAP.G + 1;
 export const NZ = (MAP.maxZ - MAP.minZ) / MAP.G + 1;
 const R = 12; // raster resolution for the coastline distance field
 const RW = (MAP.maxX - MAP.minX) / R, RH = (MAP.maxZ - MAP.minZ) / R;
 const CG = 240, CN = 301, C0 = -36000; // coarse backdrop grid
+
+// ---- surrounding areas (regional map): closed until the city grows, or all open ------------------
+export const HAS_AREAS = MAPMODE === 'region';
+export const AREAS = [
+  { k: 'sf', name: 'San Francisco', at: 0, c: [-122.44, 37.76] }, { k: 'daly', name: 'Daly City', at: 5000, c: [-122.47, 37.69] },
+  { k: 'ssf', name: 'South City', at: 12000, c: [-122.41, 37.665] }, { k: 'oak', name: 'Oakland', at: 25000, c: [-122.275, 37.80] },
+  { k: 'berk', name: 'Berkeley', at: 45000, c: [-122.285, 37.865] }, { k: 'marin', name: 'Marin', at: 70000, c: [-122.49, 37.845] },
+];
+export const areas = { open: new Set(['sf']), all: false, sig: HAS_AREAS ? '100000' : '' };
+// which area a point belongs to (index into AREAS); the limits are straight lines in real-world metres
+export function areaAt(x, z) {
+  if (!HAS_AREAS) return 0;
+  const rx = x / K, rz = z / K;
+  if (rx > 8400) return rz < -8400 ? 4 : 3;
+  if (rz > 6900) return rz > 10800 || rx > 1800 ? 2 : 1;
+  if (rz < -4800 && rx < 4500 && !(rx > 1000 && rz > -6700)) return 5;
+  return 0;
+}
+export const areaOpen = (a) => !HAS_AREAS || a === 0 || areas.all || areas.open.has(AREAS[a].k);
+export const lockedAt = (x, z) => { const a = areaAt(x, z); return areaOpen(a) ? null : AREAS[a]; };
 
 export const ll = (lon, lat) => [(lon - LON0) * MX * K, -(lat - LAT0) * MZ * K];
 
@@ -163,7 +186,7 @@ function analyticHeight(x, z, d) {
   const out = Math.max(SFB.minX - x, x - SFB.maxX, SFB.minZ - z, z - SFB.maxZ, 0);
   if (out > 0) { // generic ranges beyond the city (Marin, East Bay, Peninsula)
     const n = fbm(x / 5200 + 7.3, z / 5200 - 2.1, 4);
-    h += smoothstep(0, 7000 * K, out) * smoothstep(200, 2500, d) * n * n * (MAPMODE === 'bay' && inMap(x, z) ? 300 : 760);
+    h += smoothstep(0, 7000 * K, out) * smoothstep(200, 2500, d) * n * n * (MAPMODE === 'region' && inMap(x, z) ? 300 * (x > SFB.maxX + 900 ? smoothstep(900, 2600, d) : 1) : 760);
   }
   return 1 + (h - 1) * smoothstep(0, 150, d);
 }
@@ -260,9 +283,9 @@ export function raycastGround(ox, oy, oz, dx, dy, dz, maxT = 60000) {
 
 // ---- rendering ------------------------------------------------------------------------------
 const C = {
-  grassA: hex2lin('#7b8259'), grassB: hex2lin('#93905f'), dry: hex2lin('#a89e72'), park: hex2lin('#586c48'), forest: hex2lin('#4a5a41'),
-  rock: hex2lin('#8b8372'), sand: hex2lin('#cdbf9c'), dune: hex2lin('#b5a981'), shallow: hex2lin('#7d958c'), deep: hex2lin('#2c4250'),
-  far: hex2lin('#7f8468'), fill: hex2lin('#9c9684'),
+  grassA: hex2lin('#74905a'), grassB: hex2lin('#8fa062'), dry: hex2lin('#a9a570'), park: hex2lin('#55784a'), forest: hex2lin('#4a6141'),
+  rock: hex2lin('#8f8773'), sand: hex2lin('#d4c6a0'), dune: hex2lin('#b9b083'), shallow: hex2lin('#6f9a96'), deep: hex2lin('#2b4a5c'),
+  far: hex2lin('#7c8d66'), fill: hex2lin('#9c9684'),
 };
 const mix3 = (a, b, t, o) => { o[0] = lerp(a[0], b[0], t); o[1] = lerp(a[1], b[1], t); o[2] = lerp(a[2], b[2], t); return o; };
 
@@ -286,7 +309,7 @@ export function buildTerrain(scene, zoneTex, GX, GZ) {
     uMapSize: { value: new THREE.Vector2(MAP.maxX - MAP.minX, MAP.maxZ - MAP.minZ) }, uCells: { value: new THREE.Vector2(GX, GZ) },
     uZoneCols: { value: [] }, uShowEmpty: { value: 0.5 }, uShowDev: { value: 0 }, uGrid: { value: 0 },
     uBrush: { value: new THREE.Vector4(0, 0, 0, 0) }, uRect: { value: new THREE.Vector4(0, 0, 0, 0) }, uRectOn: { value: 0 },
-    uPrevCol: { value: new THREE.Color(1, 1, 1) }, uHeatTex: { value: null }, uHeat: { value: 0 }, uHeatScale: { value: new THREE.Vector2(1, 1) },
+    uPrevCol: { value: new THREE.Color(1, 1, 1) }, uLock: { value: AREAS.map((a, i) => (areaOpen(i) ? 0 : 1)) }, uK: { value: K }, uHeatTex: { value: null }, uHeat: { value: 0 }, uHeatScale: { value: new THREE.Vector2(1, 1) },
   };
   const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.96, metalness: 0 });
   mat.onBeforeCompile = (sh) => {
@@ -296,7 +319,7 @@ export function buildTerrain(scene, zoneTex, GX, GZ) {
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
       varying vec3 vWp;
       uniform sampler2D uZoneTex; uniform vec2 uMapMin, uMapSize, uCells; uniform vec3 uZoneCols[13]; uniform sampler2D uHeatTex; uniform float uHeat; uniform vec2 uHeatScale;
-      uniform float uShowEmpty, uShowDev, uGrid, uRectOn; uniform vec4 uBrush, uRect; uniform vec3 uPrevCol;
+      uniform float uShowEmpty, uShowDev, uGrid, uRectOn; uniform vec4 uBrush, uRect; uniform vec3 uPrevCol; uniform float uLock[6]; uniform float uK;
       float th(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
       float tn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
         return mix(mix(th(i), th(i+vec2(1,0)), f.x), mix(th(i+vec2(0,1)), th(i+vec2(1,1)), f.x), f.y); }`)
@@ -306,12 +329,16 @@ export function buildTerrain(scene, zoneTex, GX, GZ) {
         diffuseColor.rgb *= 0.86 + 0.28 * dn;
         vec2 cc = (vWp.xz - uMapMin) / uMapSize;
         if (cc.x > 0.0 && cc.x < 1.0 && cc.y > 0.0 && cc.y < 1.0 && vWp.y > 0.2) {
+          vec2 rr = vWp.xz / uK; // areas that are not open yet read as a grey survey map
+          int ar = rr.x > 8400.0 ? (rr.y < -8400.0 ? 4 : 3) : rr.y > 6900.0 ? ((rr.y > 10800.0 || rr.x > 1800.0) ? 2 : 1) : (rr.y < -4800.0 && rr.x < 4500.0 && !(rr.x > 1000.0 && rr.y > -6700.0)) ? 5 : 0;
+          float lk = uLock[ar];
+          if (lk > 0.0) { float gl = dot(diffuseColor.rgb, vec3(0.3, 0.5, 0.2)), hat = smoothstep(0.38, 0.5, abs(fract((vWp.x + vWp.z) / 96.0) - 0.5)); diffuseColor.rgb = mix(diffuseColor.rgb, vec3(gl * 0.95, gl * 0.97, gl) * (0.8 - 0.09 * hat), 0.8 * lk); }
           float v = floor(texture2D(uZoneTex, cc).r * 255.0 + 0.5);
           float zone = mod(v, 16.0); float flags = floor(v / 16.0);
           float paved = mod(flags, 2.0), dev = mod(floor(flags / 2.0), 2.0);
           vec2 cell = cc * uCells; vec2 fw = fwidth(cell);
           if (paved > 0.5) diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.30, 0.295, 0.285) * (0.9 + 0.2 * dn), 0.94);
-          else if (dev > 0.5) diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.19, 0.25, 0.13), 0.45);
+          else if (dev > 0.5) diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.27, 0.31, 0.2), 0.45);
           if (zone > 0.5) {
             vec3 zc = uZoneCols[int(zone)];
             diffuseColor.rgb = mix(diffuseColor.rgb, zc, dev > 0.5 ? uShowDev : uShowEmpty);
@@ -357,9 +384,9 @@ export function buildTerrain(scene, zoneTex, GX, GZ) {
       groundColor(x, z, y, coastDist(x, z), sl, col); cols[o] = col[0]; cols[o + 1] = col[1]; cols[o + 2] = col[2];
     }
     const lods = [1, 2, 4].map((st) => {
-      const idx = new Uint32Array(((w - 1) / st) * ((h - 1) / st) * 6); let k = 0;
+      const idx = new Uint32Array(Math.ceil((w - 1) / st) * Math.ceil((h - 1) / st) * 6); let k = 0;
       for (let j = 0; j < h - 1; j += st) for (let i = 0; i < w - 1; i += st) {
-        const a = j * w + i, b = a + st, c = a + w * st, d = c + st;
+        const si = Math.min(st, w - 1 - i), sj = Math.min(st, h - 1 - j), a = j * w + i, b = a + si, c = a + w * sj, d = c + si;
         idx[k++] = a; idx[k++] = c; idx[k++] = b; idx[k++] = b; idx[k++] = c; idx[k++] = d;
       }
       return new THREE.BufferAttribute(idx, 1);
@@ -467,7 +494,7 @@ export function buildForests(scene) {
   const forests = FORESTS.map(([lon, lat, r, dens]) => [...ll(lon, lat), r * K, dens]);
   const S = 27, BUCKET = 1728;
   const buckets = new Map();
-  const palette = ['#4c5b3c', '#59664a', '#42513a', '#66704f', '#6c7458', '#8d7a3e', '#9a6a36', '#7f5a34'].map(hex2lin);
+  const palette = ['#4c6a3c', '#59764a', '#42603a', '#66804f', '#6c8458', '#8d8a3e', '#9a7a36', '#7f6a34'].map(hex2lin);
   for (let z = MAP.minZ + S; z < MAP.maxZ; z += S) for (let x = MAP.minX + S; x < MAP.maxX; x += S) {
     const ci = Math.round(x / S), cj = Math.round(z / S);
     const px = x + (hash2(ci, cj) - 0.5) * S * 0.9, pz = z + (hash2(cj + 91, ci - 17) - 0.5) * S * 0.9;
@@ -484,9 +511,12 @@ export function buildForests(scene) {
     const key = Math.floor((px - MAP.minX) / BUCKET) + Math.floor((pz - MAP.minZ) / BUCKET) * 64;
     let b = buckets.get(key); if (!b) buckets.set(key, (b = []));
     const r1 = hash2(ci + 400, cj + 9);
-    b.push(px, h, pz, 5 + r1 * 5.5, 9 + hash2(ci - 3, cj + 77) * 11, Math.floor(hash2(ci + 31, cj - 55) * (r1 > 0.8 ? 8 : 5)));
+    b.push(px, h, pz, 4.5 + r1 * 4.5, 7 + hash2(ci - 3, cj + 77) * 7, Math.floor(hash2(ci + 31, cj - 55) * (r1 > 0.8 ? 8 : 5)));
   }
-  const geo = new THREE.IcosahedronGeometry(1, 0);
+  // lumpy crown: a subdivided ball with its corners pushed in and out, so the wood does not look like dice
+  const geo = new THREE.IcosahedronGeometry(1, 1), gp = geo.attributes.position;
+  for (let i = 0; i < gp.count; i++) { const x = gp.getX(i), y = gp.getY(i), z = gp.getZ(i), k = 0.82 + 0.36 * hash2(Math.round(x * 50), Math.round(y * 50 + z * 131)); gp.setXYZ(i, x * k, y * k * (y < 0 ? 0.8 : 1), z * k); }
+  geo.computeVertexNormals();
   geo.translate(0, 0.72, 0);
   const mat = new THREE.MeshStandardMaterial({ roughness: 1, flatShading: true });
   const meshes = [], m4 = new THREE.Matrix4(), c = new THREE.Color(), index = new Map();

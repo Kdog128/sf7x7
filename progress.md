@@ -40,3 +40,21 @@ Known limits:
 - Simulated traffic affects land value and satisfaction; cars do not queue.
 - Vercel deploy is blocked: the connected token cannot reach team kdog128-s-projects.
 - Existing Supabase project has 8 unrelated tables with RLS disabled (reported to the user, not changed).
+
+## Look and map pass (after first playtest feedback)
+Changes:
+- Layout: stats and demand in the bottom dock, feed top centre, top right collapsible.
+- Roads: screen-space snapping from every direction, Blocks mode (N by M stamp, T to turn), Copy and paste mode.
+- Map: default is now "SF and neighbors" at 0.6 scale. Daly City, South City, Oakland, Berkeley and Marin are greyed out and open at 5,000 / 12,000 / 25,000 / 45,000 / 70,000 residents, or all at once from the start screen or the Neighborhoods tab. Real-scale and Compressed SF remain as options. Saves from the old Bay Area map are rejected with a message.
+- Buildings: blocks.js adds rowhouses (Victorian, Italianate, Edwardian, Sunset stucco, Marina), bay-window flats, six shop kinds, parking garages, lofts, theatres and 18 industry kinds. Warmer pastel palettes, lower floor ranges outside downtown.
+- Night: post.js (bloom and grade), lamp posts with light pools, glowing signs, floodlit landmarks and venues, roadway lamps and beacons on both bridges. Two modes, Realistic and Stylized, on the start screen and in the time-of-day pop-over. Post-processing is off on Low graphics and with ?fx=0.
+- Cars, transit and people: models.js. Five car bodies with head and tail lamps, bus, cable car, tram, ferry, walkers with a walk cycle, scooters. These are coded, not from an asset pack.
+- Demo district: mostly rowhouses and flats, shop corridors, one small tower cluster, industry and port in the south-east corner.
+- three.js and Lucide are vendored under vendor/ (no CDN at run time).
+- Fixes found in QA: rain streaks drew lines across the screen when one end wrapped; a snapped camera looked at sea level for a moment; team gating by year (Giants 1958, Warriors 1962, 49ers 1946, Sharks 1991, Earthquakes 1996, Valkyries 2025).
+
+Facts rechecked against sources: Transamerica Pyramid 260 m, Salesforce Tower 326 m, Coit Tower 64 m, Ferry Building tower 75 m (all four corrected), Golden Gate towers 227 m, Oracle Park and Chase Center capacity, festival first years (Sketchfest 2002, Bay to Breakers 1912, Carnaval 1979, Pride 1970, Fleet Week 1981, Hardly Strictly 2001, Outside Lands 2008, Portola 2022, Dreamforce 2003), division rivals for each team. Venue lists include some rooms that have since closed (for example The Purple Onion); kept on purpose.
+
+Verified in the browser (software GL): demo load, nearby city lock message, daily unlock, save and load of open areas, Neighborhoods tab list, night mode toggle, ?fx=0, 390 px layout, all 12 landmarks at their real sites on the region map (Transamerica needs its lot cleared when the demo is loaded), bridges at night, each vehicle and person model up close.
+
+Still not verified: frame rate on a real GPU (post-processing adds cost; Auto drops it under 20 fps), hosting the Olympics, the 1999 era start, hand-drawn ferry and cable lines, removing a transit line, audible sound, the Claude endpoint, Budget mode balance.

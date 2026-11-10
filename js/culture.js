@@ -21,12 +21,12 @@ const NAMES = {
   comic: [['Dana', 'Marcus', 'Priya', 'Leo', 'Imani', 'Wes', 'Rosa', 'Theo', 'Mei', 'Omar', 'Gwen', 'Tito', 'June', 'Rafa', 'Nell', 'Sasha'], ['Okafor', 'Lindqvist', 'Tran', 'Delgado', 'Abernathy', 'Kowalski', 'Nakamura', 'Fitzroy', 'Castellanos', 'Wu', 'Baptiste', 'Greenberg', 'Oyelaran', 'Park']],
 };
 export const LEAGUES = {
-  MLB: { team: 'Giants', parody: 'Giantz', sport: 'Baseball', seasons: [1, 2, 3], games: 54, rivals: ['Dodgers', 'Padres', 'Diamondbacks', 'Rockies'] },
-  NBA: { team: 'Warriors', parody: 'Worriers', sport: 'Basketball', seasons: [3, 0, 1], games: 27, rivals: ['Lakers', 'Kings', 'Suns', 'Clippers'] },
-  WNBA: { team: 'Valkyries', parody: 'Valkyrees', sport: 'Basketball', seasons: [2], games: 44, rivals: ['Aces', 'Storm', 'Sparks', 'Mercury'] },
-  NFL: { team: '49ers', parody: '69ers', sport: 'Football', seasons: [3, 0], games: 9, rivals: ['Seahawks', 'Rams', 'Cardinals'] },
-  NHL: { team: 'Sharks', parody: 'Shorks', sport: 'Hockey', seasons: [3, 0, 1], games: 27, rivals: ['Kings', 'Ducks', 'Golden Knights', 'Kraken'] },
-  MLS: { team: 'Earthquakes', parody: 'Aftershocks', sport: 'Soccer', seasons: [1, 2, 3], games: 11, rivals: ['Galaxy', 'LAFC', 'Timbers', 'Sounders'] },
+  MLB: { from: 1958, team: 'Giants', parody: 'Giantz', sport: 'Baseball', seasons: [1, 2, 3], games: 54, rivals: ['Dodgers', 'Padres', 'Diamondbacks', 'Rockies'] },
+  NBA: { from: 1962, team: 'Warriors', parody: 'Worriers', sport: 'Basketball', seasons: [3, 0, 1], games: 27, rivals: ['Lakers', 'Kings', 'Suns', 'Clippers'] },
+  WNBA: { from: 2025, team: 'Valkyries', parody: 'Valkyrees', sport: 'Basketball', seasons: [2], games: 44, rivals: ['Aces', 'Storm', 'Sparks', 'Mercury'] },
+  NFL: { from: 1946, team: '49ers', parody: '69ers', sport: 'Football', seasons: [3, 0], games: 9, rivals: ['Seahawks', 'Rams', 'Cardinals'] },
+  NHL: { from: 1991, team: 'Sharks', parody: 'Shorks', sport: 'Hockey', seasons: [3, 0, 1], games: 27, rivals: ['Kings', 'Ducks', 'Golden Knights', 'Kraken'] },
+  MLS: { from: 1996, team: 'Earthquakes', parody: 'Aftershocks', sport: 'Soccer', seasons: [1, 2, 3], games: 11, rivals: ['Galaxy', 'LAFC', 'Timbers', 'Sounders'] },
   Tennis: { team: 'San Francisco Open', parody: 'Fog City Open', sport: 'Tennis', seasons: [2], tournament: true },
   Golf: { team: 'Presidio Invitational', parody: 'Sand Trap Invitational', sport: 'Golf', seasons: [1], tournament: true },
 };
@@ -113,7 +113,7 @@ export function onRemoved(b) {
   if (culture.f1.pit === b.id) culture.f1.pit = 0;
 }
 function ensureTeam(lg, b) {
-  const L = LEAGUES[lg]; if (!L) return; let t = culture.teams[lg];
+  const L = LEAGUES[lg]; if (!L || yearOf() < (L.from || 0)) return; let t = culture.teams[lg];   // no team before its first season in the Bay Area
   if (!t) { t = culture.teams[lg] = { lg, name: L.team, w: 0, l: 0, str: 0.42 + Math.random() * 0.14, titles: 0, venue: b.id, table: (L.rivals || []).map((n) => ({ n, w: 0, l: 0, s: 0.4 + Math.random() * 0.2 })), last: '', champs: [] }; if (game && game.mode === 'play' && b.birth > 0) { game.ui.toast(L.tournament ? `The ${nm(L.team)} comes to town` : `The ${nm(L.team)} have a home`, 'gold'); post(L.tournament ? `The ${nm(L.team)} is on the calendar.` : `The ${nm(L.team)} are playing at ${nm(CAT[b.sp].name)} this season. Finally.`, 'sport'); } }
   else if (!t.venue || !buildings.has(t.venue)) t.venue = b.id;
 }
@@ -285,6 +285,7 @@ export function stepTips(dt) {
 }
 let prevPhase = 'calm';
 export function cultureDay() {
+  if (sim.day % 4 === 0) for (const b of buildings.values()) { const c = b.sp && CAT[b.sp]; if (c && c.fx.league) for (const lg of c.fx.league.split(',')) ensureTeam(lg, b); }   // teams that arrive in a later year
   nightly(); sportsDay(); festDay(); olyDay();
   if (culture.f1.pts && seasonOf() === 1) { const p = culture.f1.pts; culture.live.push({ k: 'gp', name: nm('San Francisco Grand Prix'), x: p[0], z: p[1], kind: 'race', t0: sim.day * 24 + 13, t1: sim.day * 24 + 16, tour: 9 }); }
   if (seasonOf() === 0) { const [x, z] = ll(-122.3937, 37.7955); culture.live.push({ k: 'ny', name: 'New Year', x, z, kind: 'fireworks', t0: sim.day * 24 + 0.05, t1: sim.day * 24 + 0.9, tour: 2 }); }

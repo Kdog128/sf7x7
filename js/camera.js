@@ -12,7 +12,7 @@ export class CameraRig {
   }
   set(x, z, dist, yaw, pitch, snap = true) {
     this.gTarget.set(x, 0, z); this.gDist = dist; this.gYaw = yaw; this.gPitch = pitch;
-    if (snap) { this.target.copy(this.gTarget); this.dist = dist; this.yaw = yaw; this.pitch = pitch; this.apply(); }
+    if (snap) { this.target.copy(this.gTarget); this.target.y = Math.max(heightAt(x, z), 0); this.dist = dist; this.yaw = yaw; this.pitch = pitch; this.apply(); }
   }
   offset(dist, yaw, pitch, out) { const c = Math.cos(pitch); return out.set(Math.sin(yaw) * c * dist, Math.sin(pitch) * dist, Math.cos(yaw) * c * dist); }
   // Pan by a world-space delta on the ground plane.

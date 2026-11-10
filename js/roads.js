@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { MAP, heightAt, coastDist } from './terrain.js';
 import { CELL, GX, GZ, CH, CXN, CZN, road, bid, removeBuilding, state as W, toI, toJ } from './world.js';
-import { MeshBuilder, tree, TREE_COLORS, buildingUniforms } from './buildings.js';
+import { MeshBuilder, tree, TREE_COLORS, buildingUniforms, prim } from './buildings.js';
 import { clamp, smoothstep, hash2 } from './util.js';
 
 export const ROAD_TYPES = {
@@ -262,12 +262,12 @@ const ASPHALT = [70, 71, 74], WALK = [152, 148, 139], SHOULDER = [92, 88, 80], S
 export function makeRoadMaterial() {
   const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.93, metalness: 0, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -6 });
   mat.onBeforeCompile = (shd) => {
-    shd.uniforms.uNight = buildingUniforms.uNight;
+    shd.uniforms.uNight = buildingUniforms.uNight; shd.uniforms.uGlow = buildingUniforms.uGlow;
     shd.vertexShader = shd.vertexShader.replace('#include <common>', '#include <common>\nattribute vec2 aUv; attribute vec4 aWin; varying vec2 vUv2; varying vec4 vWin;')
       .replace('#include <color_vertex>', '#include <color_vertex>\nvColor.rgb = pow(vColor.rgb, vec3(2.2));')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvUv2 = aUv; vWin = aWin;');
     shd.fragmentShader = shd.fragmentShader.replace('#include <common>', `#include <common>
-      varying vec2 vUv2; varying vec4 vWin; uniform float uNight;
+      varying vec2 vUv2; varying vec4 vWin; uniform float uNight; uniform vec3 uGlow;
       float rh(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
       float rn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f); return mix(mix(rh(i), rh(i+vec2(1,0)), f.x), mix(rh(i+vec2(0,1)), rh(i+vec2(1,1)), f.x), f.y); }
       float ln(float x, float c, float w, float fw){ return 1.0 - smoothstep(w * 0.5 - fw * 0.5, w * 0.5 + fw * 0.5, abs(x - c)); }`)
@@ -302,7 +302,7 @@ export function makeRoadMaterial() {
         float half_ = vWin.y * 255.0 / 8.0, per = 34.0;
         float lv = abs(fract(vUv2.y / per + (vUv2.x < 0.0 ? 0.5 : 0.0)) - 0.5) * per, du = abs(vUv2.x) - half_;
         float pool = exp(-(lv * lv + du * du * 0.7) / 30.0);
-        totalEmissiveRadiance += vec3(1.0, 0.66, 0.34) * diffuseColor.rgb * pool * uNight * 2.6;
+        totalEmissiveRadiance += vec3(1.0, 0.66, 0.34) * diffuseColor.rgb * pool * uNight * 2.8 * uGlow.z;
       }`);
   };
   return mat;
@@ -405,6 +405,17 @@ export class RoadRenderer {
       strip(A, B, 0, 1, -ww, -hw + 0.6, 0, side, 0); strip(A, B, 4, 5, hw - 0.6, ww, 0, side, 0);
       strip(A, B, 2, 3, -hw, hw, 0.13, asph, kind);
       if (A.bridge || B.bridge) this.emitBridge(A, B, T);
+    }
+    // lamp posts stand where the shader draws the pools of light: every 34 m, alternating sides
+    if (lamp && len > 24) {
+      const POST = [52, 58, 54], LANTERN = [255, 214, 150], LIT = { bay: 1, fh: 1, base: 0, ww: 0, wh: 0, style: 32, seed: 0 };
+      for (let s = 0, k = 0; s < len - 6; s += 17, k++) {
+        if (s < Math.max(6, rA + 3) || s > len - Math.max(6, rB + 3)) continue;
+        const a = at(p, c, s), [tx, tz] = dirAt(a[2]), sd = k % 2 ? 1 : -1, off = sd * (hw + 0.7), x = a[0] - tz * off, z = a[1] + tx * off;
+        if (heightAt(x, z) < 0.6) continue;
+        const y = roadY(x, z); pb.birth = -100;
+        prim.box(pb, x - 0.09, z - 0.09, x + 0.09, z + 0.09, y, y + 5.6, POST, null); prim.box(pb, x - 0.3, z - 0.3, x + 0.3, z + 0.3, y + 5.6, y + 6.3, LANTERN, LANTERN, LIT);
+      }
     }
     // street trees and median planting (land only)
     if (T.trees && len > 30) {
