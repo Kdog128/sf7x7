@@ -25,9 +25,14 @@ Modules: structures.js (catalog, landmarks, venues, styles), city.js (64 m grids
 
 Decisions: 4 game days = 1 year (one per season). Map size reloads with ?map=compact|bay; saves record the map. Shared ?city=ID view is read-only and forces parody names. Saves live in Supabase (project iaxxvgwivltgevwkkgmi, sf7x7_ objects, RLS on, access only through security definer functions keyed by a sync code kept in a cookie). No browser storage APIs. T rotates a structure, C opens the City panel, H hides the HUD. window.advanceDays(n) fast-forwards for tests.
 
-Verified in the browser with real input (software GL): setup options (map, start, era, money, interface, camera), demo, Build tool for every category, all 12 landmarks at their real sites on all 3 maps, Smart-fill with checkboxes and prompt, undo and redo of fills, transit line drawing and routing, terrain raise, landfill, dig and pier, historic locks (click, drag, info panel), fire and earthquake, festivals, Grand Prix on streets, Olympic bid through to the vote, overlays and legend, weather, sound toggle, all City tabs, tech boom and bust, 20 years of fast-forward in Budget mode, cloud save, load, overwrite, share, read-only view, export, import of v1 and v2 files, 390 px layout.
+Verified in the browser with real input (software GL): setup options (map, start, era, money, interface, camera), demo, Build tool for every category, all 12 landmarks at their real sites on the real-scale map (with the demo district loaded, Transamerica did not place on Compressed, and Transamerica and Salesforce did not place on Bay Area; cause not confirmed, probably overlap with the demo), Smart-fill with checkboxes and prompt, undo and redo of fills, transit line drawing and routing, terrain raise, landfill, dig and pier, historic locks (click, drag, info panel), fire and earthquake, festivals, Grand Prix on streets, Olympic bid through to the vote, overlays and legend, weather, sound toggle, all City tabs, tech boom and bust, 20 years of fast-forward in Budget mode, cloud save, load, overwrite, share, read-only view, export, import of v1 and v2 files, 390 px layout.
 
 Known limits:
+- Not exercised: hosting the Olympic Games (bid and vote only), the 1999 era, ferry and cable car lines drawn by hand, removing and undoing a transit line, a live call to the Claude endpoint, audible sound output.
+- Not rechecked after the fix: the water strip on the east edge of the Bay Area map.
+- One reading in the software renderer showed 2,040 draw calls and 8M triangles after a fast-forward; not investigated.
+- The cloud save list failed twice with a CORS preflight error during testing; one retry was added, cause not found.
+- Landmarks keep their real size on the compressed maps.
 - Frame rate is not measured on a real GPU. Simulation step is about 0.2 ms; rendering is the cost.
 - Landmark coordinates are approximate. Bay Area coastline is the Census 500k outline.
 - Metro runs at street level. A pier is a straight strip of landfill. Terraforming cannot be undone.
