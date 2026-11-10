@@ -51,7 +51,7 @@ Changes:
 - Cars, transit and people: models.js. Five car bodies with head and tail lamps, bus, cable car, tram, ferry, walkers with a walk cycle, scooters. These are coded, not from an asset pack.
 - Demo district: mostly rowhouses and flats, shop corridors, one small tower cluster, industry and port in the south-east corner.
 - three.js and Lucide are vendored under vendor/ (no CDN at run time).
-- Fixes found in QA: rain streaks drew lines across the screen when one end wrapped; a snapped camera looked at sea level for a moment; team gating by year (Giants 1958, Warriors 1962, 49ers 1946, Sharks 1991, Earthquakes 1996, Valkyries 2025).
+- Fixes found in QA: a degenerate road quad wrote a zero normal, which became a NaN pixel that bloom spread into a fully black frame at some window sizes (normals are now guarded in the mesh builder and the bloom and grade passes drop NaN and infinite pixels); rain streaks drew lines across the screen when one end wrapped; a snapped camera looked at sea level for a moment; team gating by year (Giants 1958, Warriors 1962, 49ers 1946, Sharks 1991, Earthquakes 1996, Valkyries 2025).
 
 Facts rechecked against sources: Transamerica Pyramid 260 m, Salesforce Tower 326 m, Coit Tower 64 m, Ferry Building tower 75 m (all four corrected), Golden Gate towers 227 m, Oracle Park and Chase Center capacity, festival first years (Sketchfest 2002, Bay to Breakers 1912, Carnaval 1979, Pride 1970, Fleet Week 1981, Hardly Strictly 2001, Outside Lands 2008, Portola 2022, Dreamforce 2003), division rivals for each team. Venue lists include some rooms that have since closed (for example The Purple Onion); kept on purpose.
 

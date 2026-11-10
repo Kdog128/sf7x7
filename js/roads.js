@@ -264,7 +264,7 @@ export function makeRoadMaterial() {
   mat.onBeforeCompile = (shd) => {
     shd.uniforms.uNight = buildingUniforms.uNight; shd.uniforms.uGlow = buildingUniforms.uGlow;
     shd.vertexShader = shd.vertexShader.replace('#include <common>', '#include <common>\nattribute vec2 aUv; attribute vec4 aWin; varying vec2 vUv2; varying vec4 vWin;')
-      .replace('#include <color_vertex>', '#include <color_vertex>\nvColor.rgb = pow(vColor.rgb, vec3(2.2));')
+      .replace('#include <color_vertex>', '#include <color_vertex>\nvColor.rgb = pow(max(vColor.rgb, vec3(0.0)), vec3(2.2));')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvUv2 = aUv; vWin = aWin;');
     shd.fragmentShader = shd.fragmentShader.replace('#include <common>', `#include <common>
       varying vec2 vUv2; varying vec4 vWin; uniform float uNight; uniform vec3 uGlow;
@@ -394,7 +394,7 @@ export class RoadRenderer {
       const ax = A.pts[ia * 3], az = A.pts[ia * 3 + 2], bx = A.pts[ib * 3], bz = A.pts[ib * 3 + 2];
       // face normal from the quad itself keeps lighting consistent with the slope
       const ex = B.pts[ia * 3] - ax, ey = B.pts[ia * 3 + 1] - A.pts[ia * 3 + 1], ez = B.pts[ia * 3 + 2] - az, fx = bx - ax, fy = A.pts[ib * 3 + 1] - A.pts[ia * 3 + 1], fz = bz - az;
-      let nx = ey * fz - ez * fy, ny = ez * fx - ex * fz, nz = ex * fy - ey * fx; const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl; if (ny < 0) { nx = -nx; ny = -ny; nz = -nz; }
+      let nx = ey * fz - ez * fy, ny = ez * fx - ex * fz, nz = ex * fy - ey * fx; const nl = Math.hypot(nx, ny, nz); if (nl > 1e-6) { nx /= nl; ny /= nl; nz /= nl; } else { nx = 0; ny = 1; nz = 0; } if (ny < 0) { nx = -nx; ny = -ny; nz = -nz; }
       mb.w[0] = kind; mb.w[1] = A.bridge && B.bridge ? 0 : lamp; mb.w[2] = 0; mb.w[3] = 0;
       const v0 = mb.v(bx, A.pts[ib * 3 + 1] + dy, bz, nx, ny, nz, ub, A.s, col), v1 = mb.v(B.pts[ib * 3], B.pts[ib * 3 + 1] + dy, B.pts[ib * 3 + 2], nx, ny, nz, ub, B.s, col);
       const v2 = mb.v(B.pts[ia * 3], B.pts[ia * 3 + 1] + dy, B.pts[ia * 3 + 2], nx, ny, nz, ua, B.s, col), v3 = mb.v(ax, A.pts[ia * 3 + 1] + dy, az, nx, ny, nz, ua, A.s, col);

@@ -11,7 +11,7 @@ const GRADE = {
   vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
   fragmentShader: `uniform sampler2D tDiffuse; uniform vec3 uTint, uLift; uniform float uSat, uVig; varying vec2 vUv;
     void main(){
-      vec3 c = texture2D(tDiffuse, vUv).rgb;
+      vec3 c = texture2D(tDiffuse, vUv).rgb; if (any(isnan(c)) || any(isinf(c))) c = vec3(0.0);
       float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
       c = mix(vec3(l), c, uSat) * uTint + uLift * (1.0 - smoothstep(0.0, 0.5, l));   // tint, and a colour cast in the shadows only
       vec2 d = vUv - 0.5; c *= 1.0 - uVig * smoothstep(0.25, 0.95, dot(d, d) * 2.0);
@@ -25,6 +25,8 @@ export function makePost(renderer, scene, camera) {
   const composer = new EffectComposer(renderer, target);
   composer.addPass(new RenderPass(scene, camera));
   const bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.2, 0.6, 0.9); composer.addPass(bloom);
+  // one NaN or infinite pixel from any shader would be blurred over the whole frame and turn it black, so drop those here
+  { const hp = bloom.materialHighPassFilter, a = 'vec4 texel = texture2D( tDiffuse, vUv );'; if (hp && hp.fragmentShader.includes(a)) { hp.fragmentShader = hp.fragmentShader.replace(a, a + ' if (any(isnan(texel)) || any(isinf(texel))) texel = vec4(0.0); texel.rgb = clamp(texel.rgb, 0.0, 48.0);'); hp.needsUpdate = true; } }
   const grade = new ShaderPass(GRADE); composer.addPass(grade);
   composer.addPass(new OutputPass());
   const DAY = new THREE.Vector3(1.035, 1.0, 0.95), NIGHT_REAL = new THREE.Vector3(0.98, 1.0, 1.05), NIGHT_NEON = new THREE.Vector3(0.96, 0.98, 1.1), ZERO = new THREE.Vector3(0, 0, 0), LIFT_NEON = new THREE.Vector3(0.012, 0.0, 0.028), LIFT_REAL = new THREE.Vector3(0.004, 0.003, 0.008);

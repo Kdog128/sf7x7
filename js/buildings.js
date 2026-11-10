@@ -46,6 +46,7 @@ export class MeshBuilder {
   v(x, y, z, nx, ny, nz, u, vv, c) {
     const n = this.n; if (n >= this.cap) this.grow(this.cap * 2);
     let o = n * 3; this.pos[o] = x; this.pos[o + 1] = y; this.pos[o + 2] = z;
+    if (!(nx * nx + ny * ny + nz * nz > 1e-4)) { nx = 0; ny = 1; nz = 0; }   // a zero or NaN normal turns into NaN pixels, which bloom then spreads over the whole frame
     this.nrm[o] = nx * 127; this.nrm[o + 1] = ny * 127; this.nrm[o + 2] = nz * 127;
     this.col[o] = c[0] > 255 ? 255 : c[0]; this.col[o + 1] = c[1] > 255 ? 255 : c[1]; this.col[o + 2] = c[2] > 255 ? 255 : c[2];
     o = n * 2; this.uv[o] = u; this.uv[o + 1] = vv; o = n * 3; this.anim[o] = this.birth; this.anim[o + 1] = this.baseY; this.anim[o + 2] = this.dur;
@@ -508,7 +509,7 @@ export function makeBuildingMaterial() {
     Object.assign(shd.uniforms, buildingUniforms);
     shd.vertexShader = shd.vertexShader.replace('#include <common>', `#include <common>
       attribute vec2 aUv; attribute vec4 aWin; attribute vec3 aAnim; uniform float uTime; varying vec2 vUv2; varying vec4 vWin;`)
-      .replace('#include <color_vertex>', '#include <color_vertex>\nvColor.rgb = pow(vColor.rgb, vec3(2.2));')
+      .replace('#include <color_vertex>', '#include <color_vertex>\nvColor.rgb = pow(max(vColor.rgb, vec3(0.0)), vec3(2.2));')
       .replace('#include <begin_vertex>', `#include <begin_vertex>
       vUv2 = aUv; vWin = aWin;
       float gk = clamp((uTime - aAnim.x) / max(aAnim.z, 0.2), 0.0, 1.0); gk = 1.0 - (1.0 - gk) * (1.0 - gk);
