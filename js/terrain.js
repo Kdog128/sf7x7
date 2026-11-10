@@ -1,0 +1,412 @@
+// San Francisco heightfield: real coastline (from neighbourhood outlines) + hand-placed hills.
+import * as THREE from 'three';
+import { LAND, FAR_LAND, PARK_GGP, PARK_PRESIDIO, LON0, LAT0, MX, MZ } from './data/geo.js';
+import { clamp, lerp, smoothstep, fbm, noise2, pointInRing, hex2lin, hash2 } from './util.js';
+
+export const MAP = { minX: -9120, maxX: 8160, minZ: -9120, maxZ: 7200, G: 24 };
+export const NX = (MAP.maxX - MAP.minX) / MAP.G + 1;
+export const NZ = (MAP.maxZ - MAP.minZ) / MAP.G + 1;
+const R = 12; // raster resolution for the coastline distance field
+const RW = (MAP.maxX - MAP.minX) / R, RH = (MAP.maxZ - MAP.minZ) / R;
+const CG = 240, CN = 301, C0 = -36000; // coarse backdrop grid
+
+export const ll = (lon, lat) => [(lon - LON0) * MX, -(lat - LAT0) * MZ];
+
+// Broad swells [lon, lat, height, rx, rz]
+const SWELLS = [
+  [-122.4530, 37.7500, 92, 2500, 2500], [-122.4770, 37.7520, 48, 2300, 2600], [-122.4800, 37.7800, 34, 2300, 1300],
+  [-122.4500, 37.7915, 44, 2000, 620], [-122.4250, 37.7230, 52, 2300, 1900], [-122.4640, 37.7150, 46, 2400, 1700],
+  [-122.4160, 37.7965, 26, 1000, 900], [-122.4080, 37.7530, 20, 1500, 1200], [-122.5050, 37.8400, 150, 3200, 1500],
+];
+// Named hills [lon, lat, summit height (absolute), radius]
+const HILLS = [
+  [-122.4477, 37.7544, 282, 330], [-122.4477, 37.7516, 277, 330], [-122.4572, 37.7583, 277, 500], [-122.4533, 37.7383, 283, 560],
+  [-122.4719, 37.7564, 203, 430], [-122.4660, 37.7505, 228, 420], [-122.4610, 37.7430, 215, 330], [-122.4413, 37.7683, 173, 330],
+  [-122.4388, 37.7651, 150, 230], [-122.4455, 37.7634, 172, 240], [-122.4380, 37.7430, 205, 520], [-122.4148, 37.7432, 132, 470],
+  [-122.3992, 37.7576, 98, 560], [-122.4161, 37.7930, 112, 520], [-122.4194, 37.8011, 92, 420], [-122.4058, 37.8024, 84, 270],
+  [-122.4382, 37.7925, 112, 700], [-122.4660, 37.7905, 116, 760], [-122.4520, 37.7790, 132, 330], [-122.5000, 37.7850, 112, 620],
+  [-122.5105, 37.7780, 62, 330], [-122.4460, 37.7810, 92, 420], [-122.4346, 37.7764, 80, 300], [-122.4270, 37.7570, 108, 330],
+  [-122.4755, 37.7686, 124, 190], [-122.4640, 37.7170, 150, 520], [-122.4190, 37.7180, 157, 720], [-122.3930, 37.7130, 128, 400],
+  [-122.3790, 37.7300, 78, 520], [-122.4040, 37.7290, 104, 430], [-122.4520, 37.7260, 112, 420], [-122.4130, 37.7230, 96, 380],
+  [-122.4830, 37.7985, 80, 520], [-122.4590, 37.8000, 55, 500], [-122.4300, 37.7700, 62, 420], [-122.4995, 37.8262, 285, 950],
+  [-122.4890, 37.8345, 290, 820], [-122.5290, 37.8330, 265, 980], [-122.4800, 37.8405, 185, 700], [-122.5120, 37.8300, 240, 800],
+  [-122.3660, 37.8105, 102, 330], [-122.4230, 37.8267, 41, 150], [-122.4350, 37.6880, 330, 1900], [-122.4880, 37.7060, 60, 600], [-122.5200, 37.8650, 300, 2600], [-122.4950, 37.8600, 240, 1500],
+];
+const LAKES = [[-122.4945, 37.7285, 430, 230], [-122.4905, 37.7170, 190, 600], [-122.4852, 37.7218, 330, 140]];
+const FORESTS = [ // [lon, lat, radius, density]
+  [-122.4572, 37.7583, 620, 0.62], [-122.4533, 37.7383, 520, 0.45], [-122.4420, 37.7400, 380, 0.3], [-122.4190, 37.7180, 700, 0.34],
+  [-122.5000, 37.7850, 680, 0.42], [-122.4800, 37.7355, 380, 0.4], [-122.4925, 37.7225, 900, 0.22], [-122.4413, 37.7683, 300, 0.5],
+  [-122.3660, 37.8105, 330, 0.4], [-122.5105, 37.7780, 260, 0.35], [-122.4388, 37.7651, 200, 0.25], [-122.4950, 37.8330, 1800, 0.07],
+  [-122.3930, 37.7130, 380, 0.25],
+];
+
+function rasterize(rings, w, h, x0, z0, res, mask) {
+  const xs = [];
+  for (const r of rings) {
+    const n = r.length;
+    let minz = Infinity, maxz = -Infinity;
+    for (let i = 1; i < n; i += 2) { if (r[i] < minz) minz = r[i]; if (r[i] > maxz) maxz = r[i]; }
+    const j0 = Math.max(0, Math.floor((minz - z0) / res - 0.5)), j1 = Math.min(h - 1, Math.ceil((maxz - z0) / res));
+    for (let j = j0; j <= j1; j++) {
+      const z = z0 + (j + 0.5) * res; xs.length = 0;
+      for (let i = 0, k = n - 2; i < n; k = i, i += 2) {
+        const za = r[k + 1], zb = r[i + 1];
+        if ((za > z) !== (zb > z)) xs.push(r[k] + ((z - za) / (zb - za)) * (r[i] - r[k]));
+      }
+      xs.sort((a, b) => a - b);
+      for (let k = 0; k + 1 < xs.length; k += 2) {
+        const i0 = Math.max(0, Math.ceil((xs[k] - x0) / res - 0.5)), i1 = Math.min(w - 1, Math.floor((xs[k + 1] - x0) / res - 0.5));
+        for (let i = i0; i <= i1; i++) mask[j * w + i] = 1;
+      }
+    }
+  }
+}
+
+// Exact squared Euclidean distance transform (Felzenszwalb & Huttenlocher), in cells.
+function edt(mask, w, h, target) {
+  const INF = 1e12, n = Math.max(w, h);
+  const f = new Float64Array(n), dd = new Float64Array(n), v = new Int32Array(n), zz = new Float64Array(n + 1);
+  const out = new Float32Array(w * h);
+  const pass = (len) => {
+    let k = 0; v[0] = 0; zz[0] = -INF; zz[1] = INF;
+    for (let q = 1; q < len; q++) {
+      let s;
+      for (;;) {
+        const p = v[k];
+        s = (f[q] + q * q - (f[p] + p * p)) / (2 * q - 2 * p);
+        if (s <= zz[k] && k > 0) k--; else break;
+      }
+      k++; v[k] = q; zz[k] = s; zz[k + 1] = INF;
+    }
+    k = 0;
+    for (let q = 0; q < len; q++) { while (zz[k + 1] < q) k++; const p = v[k]; dd[q] = (q - p) * (q - p) + f[p]; }
+  };
+  for (let i = 0; i < w; i++) {
+    for (let j = 0; j < h; j++) f[j] = mask[j * w + i] === target ? 0 : INF;
+    pass(h);
+    for (let j = 0; j < h; j++) out[j * w + i] = dd[j];
+  }
+  for (let j = 0; j < h; j++) {
+    for (let i = 0; i < w; i++) f[i] = out[j * w + i];
+    pass(w);
+    for (let i = 0; i < w; i++) out[j * w + i] = dd[i];
+  }
+  return out;
+}
+function signedDistance(mask, w, h, res) {
+  const toWater = edt(mask, w, h, 0), toLand = edt(mask, w, h, 1);
+  const sd = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) sd[i] = mask[i] ? Math.sqrt(toWater[i]) * res - res * 0.5 : -Math.sqrt(toLand[i]) * res + res * 0.5;
+  return sd;
+}
+
+// ---- build the fields once at import --------------------------------------------------------
+const fine = new Uint8Array(RW * RH);
+rasterize(LAND, RW, RH, MAP.minX, MAP.minZ, R, fine);
+rasterize(FAR_LAND, RW, RH, MAP.minX, MAP.minZ, R, fine);
+for (const [lon, lat, rx, rz] of LAKES) {
+  const [cx, cz] = ll(lon, lat);
+  const i0 = Math.max(0, Math.floor((cx - rx - MAP.minX) / R)), i1 = Math.min(RW - 1, Math.ceil((cx + rx - MAP.minX) / R));
+  const j0 = Math.max(0, Math.floor((cz - rz - MAP.minZ) / R)), j1 = Math.min(RH - 1, Math.ceil((cz + rz - MAP.minZ) / R));
+  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+    const dx = (MAP.minX + (i + 0.5) * R - cx) / rx, dz = (MAP.minZ + (j + 0.5) * R - cz) / rz;
+    if (dx * dx + dz * dz < 1) fine[j * RW + i] = 0;
+  }
+}
+const SD = signedDistance(fine, RW, RH, R);
+const coarse = new Uint8Array(CN * CN);
+rasterize(LAND, CN, CN, C0 - CG / 2, C0 - CG / 2, CG, coarse);
+rasterize(FAR_LAND, CN, CN, C0 - CG / 2, C0 - CG / 2, CG, coarse);
+const SDC = signedDistance(coarse, CN, CN, CG);
+
+function bil(arr, w, h, fx, fz) {
+  fx = clamp(fx, 0, w - 1.001); fz = clamp(fz, 0, h - 1.001);
+  const i = Math.floor(fx), j = Math.floor(fz), tx = fx - i, tz = fz - j, o = j * w + i;
+  return (arr[o] * (1 - tx) + arr[o + 1] * tx) * (1 - tz) + (arr[o + w] * (1 - tx) + arr[o + w + 1] * tx) * tz;
+}
+const inMap = (x, z) => x >= MAP.minX && x <= MAP.maxX && z >= MAP.minZ && z <= MAP.maxZ;
+// Signed distance to the nearest shore in metres (positive on land).
+export function coastDist(x, z) {
+  if (inMap(x, z)) return bil(SD, RW, RH, (x - MAP.minX) / R - 0.5, (z - MAP.minZ) / R - 0.5);
+  return bil(SDC, CN, CN, (x - C0) / CG, (z - C0) / CG);
+}
+
+const swells = SWELLS.map(([lon, lat, h, rx, rz]) => [...ll(lon, lat), h, rx, rz]);
+const hills = HILLS.map(([lon, lat, h, r]) => [...ll(lon, lat), h, r]);
+function analyticHeight(x, z, d) {
+  if (d <= 0) return -0.6 - 26 * (1 - Math.exp(d / 260));
+  let g = 5;
+  for (const s of swells) {
+    const dx = (x - s[0]) / s[3], dz = (z - s[1]) / s[4], q = dx * dx + dz * dz;
+    if (q < 9) g += s[2] * Math.exp(-q);
+  }
+  let e = 0; // smooth max of each hill's rise above the swell surface
+  for (const hl of hills) {
+    const dx = x - hl[0], dz = z - hl[1], r = hl[3];
+    if (dx > 3 * r || dx < -3 * r || dz > 3 * r || dz < -3 * r) continue;
+    const c = (hl[2] - g) * Math.exp(-(dx * dx + dz * dz) / (r * r));
+    if (c > 0) e += c * c * c;
+  }
+  let h = g + Math.cbrt(e);
+  h += (fbm(x / 210, z / 210, 3) - 0.47) * (3 + 0.05 * h);
+  if (!inMap(x, z)) { // generic ranges beyond the playable map (Marin, East Bay, Peninsula)
+    const out = Math.max(MAP.minX - x, x - MAP.maxX, MAP.minZ - z, z - MAP.maxZ, 0);
+    const n = fbm(x / 5200 + 7.3, z / 5200 - 2.1, 4);
+    h += smoothstep(0, 7000, out) * smoothstep(200, 2500, d) * n * n * 760;
+  }
+  return 1 + (h - 1) * smoothstep(0, 150, d);
+}
+
+export const H = new Float32Array(NX * NZ);
+for (let j = 0; j < NZ; j++) for (let i = 0; i < NX; i++) {
+  const x = MAP.minX + i * MAP.G, z = MAP.minZ + j * MAP.G;
+  H[j * NX + i] = analyticHeight(x, z, coastDist(x, z));
+}
+// Height on the rendered triangle surface.
+export function heightAt(x, z) {
+  const fx = clamp((x - MAP.minX) / MAP.G, 0, NX - 1.0001), fz = clamp((z - MAP.minZ) / MAP.G, 0, NZ - 1.0001);
+  const i = Math.floor(fx), j = Math.floor(fz), tx = fx - i, tz = fz - j, o = j * NX + i;
+  const h00 = H[o], h10 = H[o + 1], h01 = H[o + NX], h11 = H[o + NX + 1];
+  return tx + tz <= 1 ? h00 + (h10 - h00) * tx + (h01 - h00) * tz : h11 + (h01 - h11) * (1 - tx) + (h10 - h11) * (1 - tz);
+}
+export function slopeAt(x, z) {
+  const e = 12;
+  const dx = heightAt(x + e, z) - heightAt(x - e, z), dz = heightAt(x, z + e) - heightAt(x, z - e);
+  return Math.hypot(dx, dz) / (2 * e);
+}
+const bbox = (rings) => { const b = [1e9, 1e9, -1e9, -1e9]; for (const r of rings) for (let i = 0; i < r.length; i += 2) { b[0] = Math.min(b[0], r[i]); b[1] = Math.min(b[1], r[i + 1]); b[2] = Math.max(b[2], r[i]); b[3] = Math.max(b[3], r[i + 1]); } return b; };
+const BB_GGP = bbox(PARK_GGP), BB_PRE = bbox(PARK_PRESIDIO);
+const inBB = (b, x, z) => x >= b[0] && x <= b[2] && z >= b[1] && z <= b[3];
+export const inGGP = (x, z) => inBB(BB_GGP, x, z) && PARK_GGP.some((r) => pointInRing(x, z, r));
+export const inPresidio = (x, z) => inBB(BB_PRE, x, z) && PARK_PRESIDIO.some((r) => pointInRing(x, z, r));
+
+// Ray vs terrain (and the sea surface). Returns {x,y,z,water} or null.
+export function raycastGround(ox, oy, oz, dx, dy, dz, maxT = 60000) {
+  let t = 0, prev = 0;
+  for (let n = 0; n < 4000 && t < maxT; n++) {
+    const x = ox + dx * t, y = oy + dy * t, z = oz + dz * t;
+    const g = Math.max(heightAt(x, z), 0);
+    if (y <= g) {
+      let a = prev, b = t;
+      for (let k = 0; k < 14; k++) {
+        const m = (a + b) / 2;
+        if (oy + dy * m <= Math.max(heightAt(ox + dx * m, oz + dz * m), 0)) b = m; else a = m;
+      }
+      const hx = ox + dx * b, hz = oz + dz * b, hh = heightAt(hx, hz);
+      if (!inMap(hx, hz)) return null;
+      return { x: hx, y: Math.max(hh, 0), z: hz, water: hh < 0.05 };
+    }
+    prev = t;
+    t += clamp((y - g) * 0.5, 1.5, 400);
+  }
+  return null;
+}
+
+// ---- rendering ------------------------------------------------------------------------------
+const C = {
+  grassA: hex2lin('#7b8259'), grassB: hex2lin('#93905f'), dry: hex2lin('#a89e72'), park: hex2lin('#586c48'), forest: hex2lin('#4a5a41'),
+  rock: hex2lin('#8b8372'), sand: hex2lin('#cdbf9c'), dune: hex2lin('#b5a981'), shallow: hex2lin('#7d958c'), deep: hex2lin('#2c4250'),
+  far: hex2lin('#7f8468'),
+};
+const mix3 = (a, b, t, o) => { o[0] = lerp(a[0], b[0], t); o[1] = lerp(a[1], b[1], t); o[2] = lerp(a[2], b[2], t); return o; };
+
+function groundColor(x, z, h, d, slope, out) {
+  if (d <= 0) return mix3(C.shallow, C.deep, smoothstep(0, 9, -h - 0.6), out);
+  const n = fbm(x / 340, z / 340, 3), n2 = noise2(x / 61, z / 61);
+  mix3(C.grassA, C.grassB, smoothstep(0.3, 0.7, n), out);
+  mix3(out, C.dry, smoothstep(0.45, 0.8, n2) * 0.55, out);
+  const west = smoothstep(-1500, -5200, x) * smoothstep(0.35, 0.6, fbm(x / 520 + 3, z / 520, 3)); // Outside Lands dunes
+  mix3(out, C.dune, west * 0.7, out);
+  if (inGGP(x, z) || inPresidio(x, z)) mix3(out, C.park, 0.8, out);
+  mix3(out, C.rock, smoothstep(0.32, 0.62, slope) * 0.8, out);
+  mix3(out, C.sand, (1 - smoothstep(6, 46, d)) * (1 - smoothstep(2.5, 7, h)), out);
+  return out;
+}
+
+export function buildTerrain(scene, zoneTex, GX, GZ) {
+  const uniforms = {
+    uZoneTex: { value: zoneTex }, uMapMin: { value: new THREE.Vector2(MAP.minX, MAP.minZ) },
+    uMapSize: { value: new THREE.Vector2(MAP.maxX - MAP.minX, MAP.maxZ - MAP.minZ) }, uCells: { value: new THREE.Vector2(GX, GZ) },
+    uZoneCols: { value: [] }, uShowEmpty: { value: 0.5 }, uShowDev: { value: 0 }, uGrid: { value: 0 },
+    uBrush: { value: new THREE.Vector4(0, 0, 0, 0) }, uRect: { value: new THREE.Vector4(0, 0, 0, 0) }, uRectOn: { value: 0 },
+    uPrevCol: { value: new THREE.Color(1, 1, 1) },
+  };
+  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.96, metalness: 0 });
+  mat.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, uniforms);
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWp;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWp = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+      varying vec3 vWp;
+      uniform sampler2D uZoneTex; uniform vec2 uMapMin, uMapSize, uCells; uniform vec3 uZoneCols[9];
+      uniform float uShowEmpty, uShowDev, uGrid, uRectOn; uniform vec4 uBrush, uRect; uniform vec3 uPrevCol;
+      float th(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      float tn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
+        return mix(mix(th(i), th(i+vec2(1,0)), f.x), mix(th(i+vec2(0,1)), th(i+vec2(1,1)), f.x), f.y); }`)
+      .replace('#include <color_fragment>', `#include <color_fragment>
+      {
+        float dn = tn(vWp.xz * 0.045) * 0.6 + tn(vWp.xz * 0.37) * 0.4;
+        diffuseColor.rgb *= 0.86 + 0.28 * dn;
+        vec2 cc = (vWp.xz - uMapMin) / uMapSize;
+        if (cc.x > 0.0 && cc.x < 1.0 && cc.y > 0.0 && cc.y < 1.0 && vWp.y > 0.2) {
+          float v = floor(texture2D(uZoneTex, cc).r * 255.0 + 0.5);
+          float zone = mod(v, 16.0); float flags = floor(v / 16.0);
+          float paved = mod(flags, 2.0), dev = mod(floor(flags / 2.0), 2.0);
+          vec2 cell = cc * uCells; vec2 fw = fwidth(cell);
+          if (paved > 0.5) diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.30, 0.295, 0.285) * (0.9 + 0.2 * dn), 0.94);
+          else if (dev > 0.5) diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.19, 0.25, 0.13), 0.45);
+          if (zone > 0.5) {
+            vec3 zc = uZoneCols[int(zone)];
+            diffuseColor.rgb = mix(diffuseColor.rgb, zc, dev > 0.5 ? uShowDev : uShowEmpty);
+          }
+          if (uGrid > 0.0) {
+            vec2 g = abs(fract(cell) - 0.5);
+            float line = max(smoothstep(0.5 - fw.x * 1.2, 0.5, g.x), smoothstep(0.5 - fw.y * 1.2, 0.5, g.y));
+            float lod = 1.0 - smoothstep(0.08, 0.35, max(fw.x, fw.y));
+            diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.04), line * uGrid * lod * (zone > 0.5 ? 0.42 : 0.2));
+          }
+          if (uBrush.w > 0.0) {
+            float bd = length(vWp.xz - uBrush.xy);
+            float ring = 1.0 - smoothstep(0.0, 1.5 + fwidth(bd) * 1.5, abs(bd - uBrush.z));
+            diffuseColor.rgb = mix(diffuseColor.rgb, uPrevCol, max(ring * 0.9, step(bd, uBrush.z) * 0.25));
+          }
+          if (uRectOn > 0.0 && vWp.x > uRect.x && vWp.x < uRect.z && vWp.z > uRect.y && vWp.z < uRect.w) {
+            vec2 e = min(vWp.xz - uRect.xy, uRect.zw - vWp.xz);
+            float edge = 1.0 - smoothstep(0.0, 1.0 + fwidth(vWp.x) * 2.0, min(e.x, e.y));
+            diffuseColor.rgb = mix(diffuseColor.rgb, uPrevCol, max(0.3, edge * 0.9));
+          }
+        }
+      }`);
+  };
+
+  // main map, in tiles so the frustum can cull
+  const group = new THREE.Group();
+  const TX = 120, TZ = 136, col = [0, 0, 0];
+  const nrm = (i, j, o) => {
+    const i0 = Math.max(i - 1, 0), i1 = Math.min(i + 1, NX - 1), j0 = Math.max(j - 1, 0), j1 = Math.min(j + 1, NZ - 1);
+    const dx = (H[j * NX + i1] - H[j * NX + i0]) / ((i1 - i0) * MAP.G), dz = (H[j1 * NX + i] - H[j0 * NX + i]) / ((j1 - j0) * MAP.G);
+    const l = 1 / Math.hypot(dx, 1, dz); o[0] = -dx * l; o[1] = l; o[2] = -dz * l; return Math.hypot(dx, dz);
+  };
+  const nv = [0, 0, 0];
+  for (let tz = 0; tz < NZ - 1; tz += TZ) for (let tx = 0; tx < NX - 1; tx += TX) {
+    const w = Math.min(TX, NX - 1 - tx) + 1, h = Math.min(TZ, NZ - 1 - tz) + 1;
+    const pos = new Float32Array(w * h * 3), nor = new Float32Array(w * h * 3), cols = new Float32Array(w * h * 3);
+    let top = -1e9;
+    for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+      const gi = tx + i, gj = tz + j, x = MAP.minX + gi * MAP.G, z = MAP.minZ + gj * MAP.G, y = H[gj * NX + gi], o = (j * w + i) * 3;
+      pos[o] = x; pos[o + 1] = y; pos[o + 2] = z; if (y > top) top = y;
+      const sl = nrm(gi, gj, nv); nor[o] = nv[0]; nor[o + 1] = nv[1]; nor[o + 2] = nv[2];
+      groundColor(x, z, y, coastDist(x, z), sl, col); cols[o] = col[0]; cols[o + 1] = col[1]; cols[o + 2] = col[2];
+    }
+    const idx = new Uint32Array((w - 1) * (h - 1) * 6); let k = 0;
+    for (let j = 0; j < h - 1; j++) for (let i = 0; i < w - 1; i++) {
+      const a = j * w + i, b = a + 1, c = a + w, d = c + 1;
+      idx[k++] = a; idx[k++] = c; idx[k++] = b; idx[k++] = b; idx[k++] = c; idx[k++] = d;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(cols, 3));
+    geo.setIndex(new THREE.BufferAttribute(idx, 1));
+    geo.computeBoundingSphere(); geo.computeBoundingBox();
+    const m = new THREE.Mesh(geo, mat); m.receiveShadow = true; m.matrixAutoUpdate = false;
+    group.add(m);
+  }
+
+  // distant land, same height function sampled coarsely; cells inside the map are skipped
+  {
+    const pos = new Float32Array(CN * CN * 3), cols = new Float32Array(CN * CN * 3);
+    const hs = new Float32Array(CN * CN);
+    for (let j = 0; j < CN; j++) for (let i = 0; i < CN; i++) {
+      const x = C0 + i * CG, z = C0 + j * CG, d = coastDist(x, z), o = (j * CN + i) * 3;
+      const onEdge = inMap(x, z);
+      const y = onEdge ? heightAt(x, z) : analyticHeight(x, z, d);
+      hs[j * CN + i] = y; pos[o] = x; pos[o + 1] = y; pos[o + 2] = z;
+      if (d <= 0) mix3(C.shallow, C.deep, smoothstep(0, 9, -y - 0.6), col);
+      else { mix3(C.far, C.grassB, noise2(x / 2100, z / 2100), col); mix3(col, C.forest, smoothstep(120, 520, y) * 0.55, col); if (onEdge) groundColor(x, z, y, d, 0, col); }
+      cols[o] = col[0]; cols[o + 1] = col[1]; cols[o + 2] = col[2];
+    }
+    const i0 = (MAP.minX - C0) / CG, i1 = (MAP.maxX - C0) / CG, j0 = (MAP.minZ - C0) / CG, j1 = (MAP.maxZ - C0) / CG;
+    const idx = [];
+    for (let j = 0; j < CN - 1; j++) for (let i = 0; i < CN - 1; i++) {
+      if (i >= i0 && i < i1 && j >= j0 && j < j1) continue;
+      const a = j * CN + i, b = a + 1, c = a + CN, d = c + 1;
+      if (hs[a] < -20 && hs[b] < -20 && hs[c] < -20 && hs[d] < -20) continue; // open water: the sea plane covers it
+      idx.push(a, c, b, b, c, d);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(cols, 3));
+    geo.setIndex(idx); geo.computeVertexNormals();
+    const far = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }));
+    far.matrixAutoUpdate = false; far.position.y = -0.4; far.updateMatrix();
+    group.add(far);
+  }
+  scene.add(group);
+  return { uniforms, group, material: mat };
+}
+
+// ---- wild trees (parks + wooded hills) ------------------------------------------------------
+export function buildForests(scene) {
+  const forests = FORESTS.map(([lon, lat, r, dens]) => [...ll(lon, lat), r, dens]);
+  const S = 27, BUCKET = 1728;
+  const buckets = new Map();
+  const palette = ['#4c5b3c', '#59664a', '#42513a', '#66704f', '#6c7458', '#8d7a3e', '#9a6a36', '#7f5a34'].map(hex2lin);
+  for (let z = MAP.minZ + S; z < MAP.maxZ; z += S) for (let x = MAP.minX + S; x < MAP.maxX; x += S) {
+    const ci = Math.round(x / S), cj = Math.round(z / S);
+    const px = x + (hash2(ci, cj) - 0.5) * S * 0.9, pz = z + (hash2(cj + 91, ci - 17) - 0.5) * S * 0.9;
+    let dens = 0;
+    for (const f of forests) {
+      const q = Math.hypot(px - f[0], pz - f[1]) / f[2];
+      if (q < 1) dens = Math.max(dens, f[3] * (1 - q * q * 0.6));
+    }
+    if (inGGP(px, pz)) dens = Math.max(dens, 0.2 + 0.5 * smoothstep(0.35, 0.65, fbm(px / 260, pz / 260, 2)));
+    else if (inPresidio(px, pz)) dens = Math.max(dens, 0.12 + 0.6 * smoothstep(0.4, 0.62, fbm(px / 330 + 9, pz / 330, 2)));
+    if (hash2(ci * 3 + 5, cj * 7 - 2) > dens) continue;
+    const h = heightAt(px, pz);
+    if (h < 2.2 || coastDist(px, pz) < 26) continue;
+    const key = Math.floor((px - MAP.minX) / BUCKET) + Math.floor((pz - MAP.minZ) / BUCKET) * 64;
+    let b = buckets.get(key); if (!b) buckets.set(key, (b = []));
+    const r1 = hash2(ci + 400, cj + 9);
+    b.push(px, h, pz, 5 + r1 * 5.5, 9 + hash2(ci - 3, cj + 77) * 11, Math.floor(hash2(ci + 31, cj - 55) * (r1 > 0.8 ? 8 : 5)));
+  }
+  const geo = new THREE.IcosahedronGeometry(1, 1);
+  geo.translate(0, 0.72, 0);
+  const mat = new THREE.MeshStandardMaterial({ roughness: 1, flatShading: true });
+  const meshes = [], m4 = new THREE.Matrix4(), c = new THREE.Color(), index = new Map();
+  const CELL = 64;
+  for (const [, b] of buckets) {
+    const n = b.length / 6, im = new THREE.InstancedMesh(geo, mat, n);
+    for (let i = 0; i < n; i++) {
+      const o = i * 6, p = palette[b[o + 5]];
+      m4.makeScale(b[o + 3], b[o + 4], b[o + 3]); m4.setPosition(b[o], b[o + 1] - 0.5, b[o + 2]);
+      im.setMatrixAt(i, m4);
+      const t = 0.82 + hash2(i, n) * 0.36; c.setRGB(p[0] * t, p[1] * t, p[2] * t); im.setColorAt(i, c);
+      const k = Math.floor((b[o] - MAP.minX) / CELL) + Math.floor((b[o + 2] - MAP.minZ) / CELL) * 512;
+      let l = index.get(k); if (!l) index.set(k, (l = []));
+      l.push(meshes.length, i, b[o], b[o + 2]);
+    }
+    im.castShadow = true; im.receiveShadow = true; im.computeBoundingSphere(); im.matrixAutoUpdate = false;
+    im.userData.orig = im.instanceMatrix.array.slice();
+    scene.add(im); meshes.push(im);
+  }
+  const zero = new THREE.Matrix4().makeScale(0, 0, 0);
+  // Remove trees inside a world-space rectangle (roads and buildings clear the land).
+  function clearRect(x0, z0, x1, z1) {
+    const dirty = new Set();
+    for (let cz = Math.floor((z0 - MAP.minZ) / CELL); cz <= Math.floor((z1 - MAP.minZ) / CELL); cz++)
+      for (let cx = Math.floor((x0 - MAP.minX) / CELL); cx <= Math.floor((x1 - MAP.minX) / CELL); cx++) {
+        const l = index.get(cx + cz * 512); if (!l) continue;
+        for (let i = 0; i < l.length; i += 4) {
+          if (l[i + 1] < 0 || l[i + 2] < x0 || l[i + 2] > x1 || l[i + 3] < z0 || l[i + 3] > z1) continue;
+          meshes[l[i]].setMatrixAt(l[i + 1], zero); dirty.add(l[i]); l[i + 1] = -l[i + 1] - 1;
+        }
+      }
+    for (const m of dirty) meshes[m].instanceMatrix.needsUpdate = true;
+  }
+  function reset() {
+    for (const m of meshes) { m.instanceMatrix.array.set(m.userData.orig); m.instanceMatrix.needsUpdate = true; }
+    for (const l of index.values()) for (let i = 0; i < l.length; i += 4) if (l[i + 1] < 0) l[i + 1] = -l[i + 1] - 1;
+  }
+  return { clearRect, reset, count: [...buckets.values()].reduce((s, b) => s + b.length / 6, 0) };
+}

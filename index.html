@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>7x7: a San Francisco city builder</title>
+<meta name="description" content="Plan roads, zone land and watch San Francisco grow from a few houses to a metropolis." />
+<link href="https://api.fontshare.com/v2/css?f[]=gambetta@500,600&f[]=switzer@400,500,600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="./style.css" />
+<script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.183.0/build/three.module.js" } }</script>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+</head>
+<body>
+<canvas id="c" aria-label="City view"></canvas>
+
+<div id="hud" class="hud" hidden>
+  <header class="top">
+    <section class="panel city" aria-label="City">
+      <div class="city-row"><span class="city-name">San Francisco</span><span class="tier" id="tier">Rural</span></div>
+      <div class="pop-row"><span class="num" id="pop">0</span><span class="lbl">residents</span><span class="sep"></span><span class="num sm" id="jobs">0</span><span class="lbl">jobs</span></div>
+      <div class="tierbar" role="progressbar" aria-label="Progress to next tier"><i id="tierbar"></i></div>
+      <div class="tiernext" id="tiernext">1,000 to Hamlet</div>
+    </section>
+    <section class="panel demand" aria-label="Demand">
+      <div class="dbar" data-k="R"><div class="track"><i></i></div><span>R</span></div>
+      <div class="dbar" data-k="C"><div class="track"><i></i></div><span>C</span></div>
+      <div class="dbar" data-k="O"><div class="track"><i></i></div><span>O</span></div>
+      <div class="dbar" data-k="I"><div class="track"><i></i></div><span>I</span></div>
+    </section>
+    <div class="spacer"></div>
+    <section class="panel clock" aria-label="Time">
+      <div class="when"><span id="day">Day 1</span><span class="num" id="time">10:00</span></div>
+      <div class="seg speed" role="group" aria-label="Speed">
+        <button data-speed="0" aria-label="Pause" title="Pause (P)"><i data-lucide="pause"></i></button>
+        <button data-speed="1" aria-label="Normal speed">1x</button>
+        <button data-speed="2" aria-label="Double speed">2x</button>
+        <button data-speed="4" aria-label="Four times speed">4x</button>
+      </div>
+      <button class="icon" id="sunBtn" aria-label="Time of day" title="Time of day" aria-expanded="false"><i data-lucide="sun-moon"></i></button>
+      <div class="pop-over" id="sunPop" hidden>
+        <label for="hour">Time of day <span class="num" id="hourLbl">10:00</span></label>
+        <input type="range" id="hour" min="0" max="24" step="0.25" value="10" />
+        <label class="check"><input type="checkbox" id="cycle" checked /> Day and night cycle</label>
+      </div>
+    </section>
+    <button class="panel icon menu-btn" id="menuBtn" aria-label="Menu" title="Menu"><i data-lucide="menu"></i></button>
+  </header>
+
+  <aside class="panel info" id="info" hidden aria-live="polite"></aside>
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+
+  <footer class="bottom">
+    <div class="panel options" id="options"></div>
+    <nav class="panel toolbar" aria-label="Tools">
+      <button data-tool="inspect" title="Inspect (1)"><i data-lucide="mouse-pointer-2"></i><span>Inspect</span></button>
+      <button data-tool="road" title="Roads (2)"><i data-lucide="route"></i><span>Roads</span></button>
+      <button data-tool="zone" title="Zones (3)"><i data-lucide="grid-2x2"></i><span>Zones</span></button>
+      <button data-tool="bulldoze" title="Bulldoze (4)"><i data-lucide="shovel"></i><span>Bulldoze</span></button>
+      <span class="divider"></span>
+      <button id="undoBtn" title="Undo (Cmd+Z)" aria-label="Undo"><i data-lucide="undo-2"></i><span>Undo</span></button>
+      <button id="redoBtn" title="Redo (Shift+Cmd+Z)" aria-label="Redo"><i data-lucide="redo-2"></i><span>Redo</span></button>
+    </nav>
+  </footer>
+  <pre class="debug" id="debug" aria-hidden="true"></pre>
+</div>
+
+<main class="title" id="title" hidden>
+  <div class="title-card">
+    <h1>7x7</h1>
+    <p class="tag">A San Francisco city builder. Lay roads, zone land and watch it grow from a few houses to a metropolis.</p>
+    <div class="title-actions">
+      <button class="btn primary" id="startEmpty">Start on empty land</button>
+      <button class="btn" id="startDemo">Open a demo district</button>
+      <button class="btn ghost" id="startImport">Import a saved city</button>
+    </div>
+    <dl class="controls">
+      <div><dt>Move</dt><dd>Drag, two-finger scroll, or W A S D</dd></div>
+      <div><dt>Zoom</dt><dd>Pinch or mouse wheel</dd></div>
+      <div><dt>Rotate</dt><dd>Right-drag, or Q and E</dd></div>
+      <div><dt>Tools</dt><dd>1 to 4. Esc cancels. Cmd+Z undoes.</dd></div>
+    </dl>
+    <p class="credit">Coastline: DataSF Analysis Neighborhoods and US Census Bureau. Hills are approximated.</p>
+  </div>
+</main>
+
+<div class="modal" id="menu" hidden role="dialog" aria-modal="true" aria-labelledby="menuTitle">
+  <div class="modal-card">
+    <div class="modal-head"><h2 id="menuTitle">Menu</h2><button class="icon" id="menuClose" aria-label="Close menu"><i data-lucide="x"></i></button></div>
+    <section>
+      <h3>Saves</h3>
+      <ul class="slots" id="slots"></ul>
+      <div class="row">
+        <button class="btn" id="exportBtn"><i data-lucide="download"></i>Export to file</button>
+        <button class="btn" id="importBtn"><i data-lucide="upload"></i>Import from file</button>
+      </div>
+      <p class="note">Slots last until this tab is closed. Export a file to keep a city.</p>
+      <p class="error" id="saveErr" hidden></p>
+    </section>
+    <section>
+      <h3>Settings</h3>
+      <div class="field"><span>Growth speed</span><div class="seg" id="growthSeg"><button data-v="0.5">Slow</button><button data-v="1">Normal</button><button data-v="2">Fast</button></div></div>
+      <div class="field"><span>Scroll wheel</span><div class="seg" id="scrollSeg"><button data-v="auto">Auto</button><button data-v="zoom">Zoom</button><button data-v="pan">Pan</button></div></div>
+      <label class="check"><input type="checkbox" id="shadows" checked /> Shadows</label>
+      <label class="check"><input type="checkbox" id="stats" checked /> Performance readout</label>
+    </section>
+    <section>
+      <h3>City</h3>
+      <div class="row">
+        <button class="btn" id="newEmpty">New empty city</button>
+        <button class="btn" id="newDemo">Load demo district</button>
+      </div>
+      <div class="confirm" id="confirm" hidden><span id="confirmMsg"></span><button class="btn danger" id="confirmYes">Replace city</button><button class="btn ghost" id="confirmNo">Cancel</button></div>
+    </section>
+    <p class="credit">Coastline: DataSF Analysis Neighborhoods and US Census Bureau cartographic boundaries.</p>
+  </div>
+</div>
+<input type="file" id="file" accept=".json,application/json" hidden />
+
+<div class="loading" id="loading"><div><span class="mark">7x7</span><span id="loadMsg">Shaping the peninsula</span></div></div>
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>
