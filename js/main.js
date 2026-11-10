@@ -178,7 +178,8 @@ window.addEventListener('resize', resize); resize();
 let last = performance.now(), manual = false;
 function frame(now) {
   requestAnimationFrame(frame);
-  const dt = Math.min((now - last) / 1000, 0.1); last = now;
+  let dt = Math.min((now - last) / 1000, 0.1); last = now;
+  if (!(dt > 0)) dt = 0;   // a frame stamped before the page finished loading must not run the clock backwards
   if (manual) return;
   tick(dt); render();
   fpsN++; fpsT += dt;
