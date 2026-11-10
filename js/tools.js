@@ -306,7 +306,7 @@ export function makeTools(game) {
       if (keys.has('Equal') || keys.has('NumpadAdd')) rig.zoom(Math.exp(-1.6 * dt), null); if (keys.has('Minus') || keys.has('NumpadSubtract')) rig.zoom(Math.exp(1.6 * dt), null);
       refreshHover();
       terrainU.uGrid.value = T.tool === 'zone' || T.tool === 'road' ? 1 : 0;
-      terrainU.uShowDev.value = T.tool === 'zone' ? 0.5 : 0; terrainU.uShowEmpty.value = T.tool === 'zone' ? 0.72 : 0.42;
+      terrainU.uShowDev.value = T.tool === 'zone' ? 0.5 : 0; terrainU.uShowEmpty.value = T.tool === 'zone' ? 0.72 : 0.17;
     },
     groundAt, pickBuilding,
   };

@@ -8,10 +8,10 @@ const hx = (s) => [parseInt(s.slice(1, 3), 16), parseInt(s.slice(3, 5), 16), par
 const sh = (c, k) => [c[0] * k, c[1] * k, c[2] * k];
 const mixc = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 const P = {
-  house: ['#d8ccb2', '#a8b199', '#9aa6ae', '#c4a968', '#96604f', '#b59a93', '#808a8e', '#e0dcd1', '#b79d7d', '#8d8e6f', '#b07253', '#a6a49c', '#c9b79a', '#8c7b6b'].map(hx),
-  brick: ['#8d5645', '#7b4a3c', '#9b6a52', '#6e4a40', '#a37a5e', '#84604f', '#93523f'].map(hx),
-  stone: ['#c8bfac', '#b9b2a2', '#a9a69c', '#d3cdbd', '#bfb39b', '#9d9b94', '#b4a88f'].map(hx),
-  tower: ['#c9c0ad', '#9c9b95', '#b8a17f', '#7e604d', '#d6d0c0', '#a89d8a', '#8b8f8c', '#b7ab94', '#6f6259', '#c2b59c'].map(hx),
+  house: ['#c9bea6', '#a0a892', '#929da4', '#b59e68', '#8e6252', '#a8918b', '#7b8488', '#cfcbc0', '#aa9377', '#86876c', '#a06f56', '#9c9a93', '#bbaa90', '#857567'].map(hx),
+  brick: ['#8a5d4e', '#7a5346', '#96735f', '#6f544b', '#9e806b', '#85695c', '#8c6152'].map(hx),
+  stone: ['#b5ac98', '#a8a192', '#9a978e', '#bfb8a7', '#aca08a', '#8e8c86', '#a2977f'].map(hx),
+  tower: ['#b6ad9a', '#8f8e88', '#a8937a', '#7b6355', '#c1bbab', '#9c9281', '#80847f', '#a89d87', '#6c625a', '#b0a48c'].map(hx),
   dark: ['#3b3733', '#4a433c', '#55504a'].map(hx),
   roof: ['#4a4743', '#57534d', '#3f3d3a', '#625c53', '#4f4a47'].map(hx),
   pitch: ['#5b4a40', '#4a4f52', '#6b5446', '#3e4245', '#7a5a48', '#525a4e'].map(hx),
@@ -19,7 +19,7 @@ const P = {
   awning: ['#3f5a47', '#6e2f2f', '#2f3f5a', '#a8873f', '#5a4a3a', '#7a3f2a', '#394a4f'].map(hx),
   shed: ['#7f5a48', '#8a8c83', '#6f7a70', '#9a8a70', '#665a52', '#85705c'].map(hx),
   metal: ['#8b9092', '#737a7c', '#a09a8c'].map(hx),
-  tree: ['#a8662a', '#c0892f', '#96492c', '#c7a23f', '#85863d', '#6b7b44', '#b0742f', '#8f5a2e', '#59693e'].map(hx),
+  tree: ['#8f5f33', '#a07c3a', '#814f34', '#a38c48', '#70733f', '#5c6b43', '#93703c', '#785634', '#50603d', '#66713f'].map(hx),
   trunk: hx('#4b3d32'), glassDark: hx('#20262b'), concrete: hx('#a09c92'), stoneLight: hx('#d2ccbc'),
 };
 
@@ -130,8 +130,8 @@ function blob(m, cx, cy, cz, rx, ry, c) {
   for (let i = 0; i < 60; i += 3) m.tri(base + ICO_F[i], base + ICO_F[i + 1], base + ICO_F[i + 2]);
 }
 export function tree(m, x, z, y, h, r, c) {
-  box(m, x - 0.22, z - 0.22, x + 0.22, z + 0.22, y - 0.5, y + h * 0.5, P.trunk, null);
-  blob(m, x, y + h * 0.68, z, r, h * 0.42, c);
+  box(m, x - 0.2, z - 0.2, x + 0.2, z + 0.2, y - 0.5, y + h * 0.42, P.trunk, null);
+  blob(m, x, y + h * 0.62, z, r * 1.15, h * 0.42, c);
 }
 export const TREE_COLORS = P.tree;
 
@@ -176,11 +176,11 @@ function roofClutter(m, F, r, lx0, lz0, lx1, lz1, y, amount, roofC) {
     else { lbox(m, F, px - 0.4, pz - 0.4, px + 0.4, pz + 0.4, y, y + 1.6 + r() * 1.2, P.brick[r.int(0, 6)], P.dark[0]); }
   }
 }
-function cornice(m, F, lx0, lz0, lx1, lz1, y, h, c, out = 0.35) { lbox(m, F, lx0 - out, lz0 - out, lx1 + out, lz1 + out, y, y + h, c, sh(c, 0.8)); }
+function cornice(m, F, lx0, lz0, lx1, lz1, y, h, c, out = 0.35, top = null) { lbox(m, F, lx0 - out, lz0 - out, lx1 + out, lz1 + out, y, y + h, c, top || sh(c, 0.7)); }
 
 // ---- design: decide the headline numbers from the seed (used for capacity before any mesh exists) ----
 const FLOORS = { // [zone][level-1] = [min, max]
-  1: [[2, 2], [3, 3]], 2: [[4, 6], [6, 10], [10, 16], [16, 26], [26, 42]], 3: [[1, 2], [2, 3]], 4: [[4, 7], [7, 12], [12, 20], [18, 28], [26, 38]],
+  1: [[2, 2], [3, 3]], 2: [[3, 5], [5, 8], [8, 13], [12, 19], [18, 30]], 3: [[1, 2], [2, 3]], 4: [[4, 7], [7, 12], [12, 20], [18, 28], [26, 38]],
   5: [[2, 4], [4, 7]], 6: [[6, 10], [10, 18], [18, 30], [30, 46], [46, 72]], 7: [[1, 1], [1, 2]], 8: [[1, 2], [2, 4], [3, 6]],
 };
 export const MAX_LEVEL = { 1: 2, 2: 5, 3: 2, 4: 5, 5: 2, 6: 5, 7: 2, 8: 3 };
@@ -197,14 +197,14 @@ export function design(b) {
   if (z === 1) {
     const row = Math.min(b.w, b.d) === 1 || (b.front & 1 ? b.d : b.w) === 1;
     variant = row ? variant % 3 : 3 + (variant % 2);
-    label = ['Victorian rowhouse', 'Edwardian flats', 'Stucco rowhouse', 'Detached house', 'Shingle house'][variant]; cov = row ? 0.6 : 0.34; per = 46;
-  } else if (z === 2) { label = floors <= 6 ? 'Walk-up apartments' : floors <= 14 ? 'Apartment house' : 'Apartment tower'; cov = floors > 14 ? 0.55 : 0.68; per = 36; }
-  else if (z === 3) { label = b.w * b.d >= 6 ? 'Shopfront row' : floors > 1 ? 'Shop with flats' : 'Corner store'; cov = 0.8; per = 42; }
-  else if (z === 4) { label = floors <= 7 ? 'Department store' : floors <= 14 ? 'Hotel' : 'Hotel tower'; cov = floors > 12 ? 0.6 : 0.82; per = 38; }
-  else if (z === 5) { label = floors <= 3 ? 'Office building' : 'Office block'; cov = 0.75; per = 24; }
-  else if (z === 6) { label = floors <= 10 ? 'Office block' : floors <= 28 ? 'Art deco office tower' : 'Art deco skyscraper'; cov = floors > 28 ? 0.5 : floors > 12 ? 0.6 : 0.8; per = 21; }
-  else if (z === 7) { label = variant < 50 ? 'Workshop' : 'Warehouse'; cov = 0.7; per = 75; }
-  else { label = lv >= 2 && variant < 60 ? 'Mill' : 'Factory'; cov = 0.6; per = 62; floors = Math.min(floors, 6); }
+    label = ['Victorian rowhouse', 'Edwardian flats', 'Stucco rowhouse', 'Detached house', 'Shingle house'][variant]; cov = row ? 0.6 : 0.34; per = 66;
+  } else if (z === 2) { label = floors <= 6 ? 'Walk-up apartments' : floors <= 14 ? 'Apartment house' : 'Apartment tower'; cov = floors > 14 ? 0.55 : 0.68; per = 58; }
+  else if (z === 3) { label = b.w * b.d >= 6 ? 'Shopfront row' : floors > 1 ? 'Shop with flats' : 'Corner store'; cov = 0.8; per = 55; }
+  else if (z === 4) { label = floors <= 7 ? 'Department store' : floors <= 14 ? 'Hotel' : 'Hotel tower'; cov = floors > 12 ? 0.6 : 0.82; per = 50; }
+  else if (z === 5) { label = floors <= 3 ? 'Office building' : 'Office block'; cov = 0.75; per = 30; }
+  else if (z === 6) { label = floors <= 10 ? 'Office block' : floors <= 28 ? 'Art deco office tower' : 'Art deco skyscraper'; cov = floors > 28 ? 0.5 : floors > 12 ? 0.6 : 0.8; per = 30; }
+  else if (z === 7) { label = variant < 50 ? 'Workshop' : 'Warehouse'; cov = 0.7; per = 90; }
+  else { label = lv >= 2 && variant < 60 ? 'Mill' : 'Factory'; cov = 0.6; per = 80; floors = Math.min(floors, 6); }
   const fa = area * cov * floors, cap = Math.max(1, Math.round(fa / per));
   const nr = rng(b.seed + 77);
   let name = '';
@@ -293,7 +293,7 @@ function emitTiers(m, F, b, s, r, o) {
       const p = 0.9, e = 0.25;
       for (const [px, pz] of [[a0, c0], [a1, c0], [a0, c1], [a1, c1]]) lbox(m, F, px - p / 2 - (px === a0 ? e : -e) * 0, pz - p / 2, px + p / 2, pz + p / 2, yb, yt + 1.3, trim, sh(trim, 0.8));
     }
-    if (k < tiers.length - 1 && left - n > 0) { cornice(m, F, a0, c0, a1, c1, yt, 0.5, trim, 0.2); if (r.chance(0.5)) roofClutter(m, F, r, a0, c0, a1, c1, yt, 1, roofC); }
+    if (k < tiers.length - 1 && left - n > 0) { cornice(m, F, a0, c0, a1, c1, yt, 0.5, trim, 0.2, roofC); if (r.chance(0.5)) roofClutter(m, F, r, a0, c0, a1, c1, yt, 1, roofC); }
     yb = yt; left -= n;
   }
   crown(m, F, b, r, o.crown, a0, c0, a1, c1, yb, { wall, trim, roofC, fh: s.fh, seed, bay: bayT });
@@ -302,7 +302,7 @@ function emitTiers(m, F, b, s, r, o) {
 
 function crown(m, F, b, r, kind, a0, c0, a1, c1, y, o) {
   const w = a1 - a0, d = c1 - c0, cx = (a0 + a1) / 2, cz = (c0 + c1) / 2, cc = r.pick(P.crown), flood = { bay: 1, fh: 1, base: 0, ww: 0, wh: 0, style: ST.flood, seed: o.seed };
-  if (kind === 'flat') { cornice(m, F, a0, c0, a1, c1, y, 0.7, o.trim, 0.3); roofClutter(m, F, r, a0 + 0.5, c0 + 0.5, a1 - 0.5, c1 - 0.5, y, Math.min(5, 1 + Math.floor((w * d) / 110)), o.roofC); return; }
+  if (kind === 'flat') { cornice(m, F, a0, c0, a1, c1, y, 0.7, o.trim, 0.3, o.roofC); roofClutter(m, F, r, a0 + 0.5, c0 + 0.5, a1 - 0.5, c1 - 0.5, y, Math.min(5, 1 + Math.floor((w * d) / 110)), o.roofC); return; }
   if (kind === 'parapet') { lbox(m, F, a0, c0, a1, c1, y, y + 0.9, o.wall, null); lbox(m, F, a0 + 0.35, c0 + 0.35, a1 - 0.35, c1 - 0.35, y + 0.2, y + 0.3, o.roofC, o.roofC); roofClutter(m, F, r, a0 + 1, c0 + 1, a1 - 1, c1 - 1, y + 0.3, Math.min(4, 1 + Math.floor((w * d) / 150)), o.roofC); return; }
   if (kind === 'hip') { cornice(m, F, a0, c0, a1, c1, y, 0.6, o.trim, 0.4); lroof(m, F, a0 - 0.2, c0 - 0.2, a1 + 0.2, c1 + 0.2, y + 0.6, Math.min(w, d) * r.range(0.3, 0.5), cc, cc, false, null); return; }
   if (kind === 'mansard') {
@@ -313,7 +313,7 @@ function crown(m, F, b, r, kind, a0, c0, a1, c1, y, o) {
   // stepped deco crowns: shrinking floodlit blocks, then a cap
   const steps = kind === 'spire' ? r.int(3, 4) : r.int(2, 3);
   let x0 = a0, x1 = a1, z0 = c0, z1 = c1, yy = y;
-  cornice(m, F, a0, c0, a1, c1, y, 0.5, o.trim, 0.15);
+  cornice(m, F, a0, c0, a1, c1, y, 0.5, o.trim, 0.15, o.roofC);
   for (let k = 0; k < steps; k++) {
     const ins = Math.max(0.8, Math.min(x1 - x0, z1 - z0) * (kind === 'spire' ? 0.16 : 0.13));
     x0 += ins; x1 -= ins; z0 += ins; z1 -= ins; if (x1 - x0 < 2.2 || z1 - z0 < 2.2) break;
@@ -335,7 +335,7 @@ function crown(m, F, b, r, kind, a0, c0, a1, c1, y, o) {
 }
 
 function emitApartment(m, F, b, s, r) {
-  const brick = r.chance(0.65), wall = brick ? r.pick(P.brick) : r.pick(P.stone), f = s.floors, { W, D } = F;
+  const f = s.floors, { W, D } = F, brick = r.chance(f > 12 ? 0.3 : 0.65), wall = brick ? r.pick(P.brick) : f > 12 ? r.pick(P.tower) : r.pick(P.stone);
   const shops = r.chance(0.3), tiers = [];
   if (f <= 9) tiers.push({ floors: f });
   else if (f <= 16) tiers.push({ floors: Math.round(f * 0.7) }, { floors: 99, inset: 3, frontOnly: r.chance(0.5) });
@@ -450,16 +450,20 @@ export function makeBuildingMaterial() {
       {
         float style = floor(vWin.z * 255.0 + 0.5);
         float prof = mod(style, 4.0), front = mod(floor(style / 8.0), 2.0), deco = mod(floor(style / 16.0), 2.0), flood = mod(floor(style / 64.0), 2.0);
-        if (flood > 0.5) totalEmissiveRadiance += diffuseColor.rgb * uNight * 0.55;
+        if (flood > 0.5) totalEmissiveRadiance += diffuseColor.rgb * uNight * 0.4;
         if (vWin.x > 0.004 && vUv2.y > 0.0) {
           vec2 fw = max(fwidth(vUv2), vec2(1e-4));
           float ww = vWin.x, wh = vWin.y, sill = front > 0.5 ? 0.06 : (1.0 - wh) * 0.42;
           float mx = pulse(vUv2.x, (1.0 - ww) * 0.5, ww, fw.x), my = pulse(vUv2.y, sill, wh, fw.y);
           float mask = mx * my, lod = smoothstep(0.3, 1.1, max(fw.x, fw.y));
-          vec2 cell = floor(vUv2); float seed = vWin.w * 255.0;
+          vec2 cell = floor(vUv2); float seed = floor(vWin.w * 255.0 + 0.5);
           float course = pulse(vUv2.y, 0.0, 0.07, fw.y) * (1.0 - lod);
           diffuseColor.rgb *= 1.0 - 0.16 * course;
+          diffuseColor.rgb *= 0.94 + 0.12 * h21(vec2(cell.y, seed + 3.0)) * (1.0 - lod);        // slight tone shift per storey
+          diffuseColor.rgb *= mix(0.78, 1.0, smoothstep(0.0, 2.2, vUv2.y));                      // grime near the pavement
           if (deco > 0.5) diffuseColor.rgb *= mix(1.0, 0.6, mx * (1.0 - my));   // dark spandrels between piers
+          float rv = pulse(vUv2.x, (1.0 - ww) * 0.5 - 0.035, ww + 0.07, fw.x) * pulse(vUv2.y, sill - 0.045, wh + 0.09, fw.y);
+          diffuseColor.rgb *= 1.0 - 0.38 * rv * (1.0 - lod);                                     // shadowed reveal around the glass
           float r1 = h21(cell + seed * vec2(0.731, 1.371)), r2 = h21(cell.yx * 1.7 + seed), fr = h21(vec2(cell.y * 3.1 + 0.5, seed));
           float frac = prof < 0.5 ? uLit.x : prof < 1.5 ? uLit.y : prof < 2.5 ? uLit.z : uLit.w;
           if (prof > 0.5 && prof < 1.5) frac *= mix(0.25, 1.9, fr * fr); else frac *= 0.6 + 0.8 * h21(floor(cell / vec2(2.0, 1.0)) + seed);
@@ -473,7 +477,7 @@ export function makeBuildingMaterial() {
           vec3 glass = mix(vec3(0.035, 0.045, 0.055), uSkyRefl, 0.16 + 0.5 * fres) * (0.75 + 0.5 * r2);
           diffuseColor.rgb = mix(diffuseColor.rgb, glass, mask);
           roughnessFactor = mix(roughnessFactor, 0.12, mask);
-          totalEmissiveRadiance += lc * (lit * mask * uNight * (0.7 + 0.9 * r2) * 1.5);
+          totalEmissiveRadiance += lc * lc * (lit * mask * uNight * (0.35 + 0.75 * r2));
         }
       }`);
   };

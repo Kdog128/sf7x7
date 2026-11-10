@@ -6,7 +6,8 @@ export const smoothstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1
 // Integer hash -> [0,1)
 export function hash2(x, y) {
   let h = (Math.imul(x | 0, 374761393) + Math.imul(y | 0, 668265263)) | 0;
-  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
 export function noise2(x, y) {

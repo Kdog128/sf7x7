@@ -28,7 +28,7 @@ export const sim = { demand: { R: 0.3, C: 0, O: 0, I: 0 }, growth: 1, acc: 0, ua
 
 function computeDemand() {
   const pop = stats.pop, workers = pop * 0.52, jobs = stats.jobsC + stats.jobsO + stats.jobsI;
-  const off = smoothstep(500, 30000, pop), wI = 0.45 - 0.27 * off, wO = 0.12 + 0.38 * off, cT = pop * 0.16;
+  const off = smoothstep(500, 30000, pop), wI = 0.45 - 0.25 * off, wO = 0.12 + 0.6 * off, cT = pop * 0.2; // jobs outgrow local workers: commuters arrive from the wider Bay
   const t = {
     R: clamp(0.3 + (jobs * 1.1 - workers) / (workers + 120), -1, 1),
     C: clamp((cT - stats.jobsC) / (cT + 30), -1, 1),
@@ -86,14 +86,20 @@ function developedShare(b, rad) {
   for (let j = cj - rad; j <= cj + rad; j += 2) for (let i = ci - rad; i <= ci + rad; i += 2) { if (!inGrid(i, j)) continue; const q = j * GX + i; if (!land[q] || road[q]) continue; t++; if (bid[q]) n++; }
   return t ? n / t : 0;
 }
+// share of nearby cells that are built up in dark zoning: high in the middle of a dense district, lower at its edge
+function centrality(b) {
+  const ci = b.i + (b.w >> 1), cj = b.j + (b.d >> 1); let n = 0, t = 0;
+  for (let j = cj - 28; j <= cj + 28; j += 4) for (let i = ci - 28; i <= ci + 28; i += 4) { t++; if (!inGrid(i, j)) continue; const q = j * GX + i; if (bid[q] && !(zone[q] & 1)) n++; }
+  return n / t;
+}
 function levelCap(b) {
   const tier = tierOf(stats.pop), max = MAX_LEVEL[b.zone];
   if (b.zone & 1) return developedShare(b, 6) > 0.4 ? max : 1;            // light zones mature with their block
   let cap = Math.min(max, 1 + Math.floor((tier + 1) / 2));
-  const share = developedShare(b, 12), area = b.w * b.d;
-  cap = Math.min(cap, share > 0.6 ? 5 : share > 0.48 ? 4 : share > 0.36 ? 3 : share > 0.22 ? 2 : 1);
+  const c = centrality(b), area = b.w * b.d;
+  cap = Math.min(cap, c > 0.5 ? 5 : c > 0.4 ? 4 : c > 0.28 ? 3 : c > 0.15 ? 2 : 1);
   if (area < 6) cap = Math.min(cap, 3); else if (area < 9) cap = Math.min(cap, 4);
-  return cap;
+  return Math.max(1, cap - [0, 0, 0, 1, 1, 2][b.seed % 6]);              // not every owner builds to the limit
 }
 const GROUP = ['', 'R', 'R', 'C', 'C', 'O', 'O', 'I', 'I'];
 
@@ -112,7 +118,7 @@ export function stepSim(dt, now) {
     let x = rnd() * tot, g = x < wR ? 0 : x < wR + wC ? 1 : x < wR + wC + wO ? 2 : 3;
     if (rnd() > [wR, wC, wO, wI][g] * 1.6) continue;
     const zl = g * 2 + 1, zd = zl + 1, nl = lists[zl].length, nd = lists[zd].length;
-    if (!nl && !nd) continue;
+    if (!nl && !nd) { sim.uacc += 0.6; continue; } // nowhere to build: pressure goes into taller buildings instead
     const z = rnd() * (nl + nd * 1.5) < nl ? zl : zd, l = lists[z];
     const lot = tryPlace(l[Math.floor(rnd() * l.length)], rnd);
     if (lot) spawn(lot, 1, Math.floor(rnd() * 0x7fffffff), now);

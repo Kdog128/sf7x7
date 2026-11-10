@@ -212,9 +212,10 @@ const mix3 = (a, b, t, o) => { o[0] = lerp(a[0], b[0], t); o[1] = lerp(a[1], b[1
 
 function groundColor(x, z, h, d, slope, out) {
   if (d <= 0) return mix3(C.shallow, C.deep, smoothstep(0, 9, -h - 0.6), out);
-  const n = fbm(x / 340, z / 340, 3), n2 = noise2(x / 61, z / 61);
-  mix3(C.grassA, C.grassB, smoothstep(0.3, 0.7, n), out);
-  mix3(out, C.dry, smoothstep(0.45, 0.8, n2) * 0.55, out);
+  const rx = x * 0.829 - z * 0.559, rz = x * 0.559 + z * 0.829;   // rotated so the noise lattice does not line up with the street grid
+  const n = fbm(rx / 420, rz / 420, 3), n2 = fbm(rx / 170 + 11, rz / 170 - 4, 2);
+  mix3(C.grassA, C.grassB, smoothstep(0.25, 0.75, n), out);
+  mix3(out, C.dry, smoothstep(0.4, 0.85, n2) * 0.4, out);
   const west = smoothstep(-1500, -5200, x) * smoothstep(0.35, 0.6, fbm(x / 520 + 3, z / 520, 3)); // Outside Lands dunes
   mix3(out, C.dune, west * 0.7, out);
   if (inGGP(x, z) || inPresidio(x, z)) mix3(out, C.park, 0.8, out);
@@ -281,7 +282,7 @@ export function buildTerrain(scene, zoneTex, GX, GZ) {
 
   // main map, in tiles so the frustum can cull
   const group = new THREE.Group();
-  const TX = 120, TZ = 136, col = [0, 0, 0];
+  const TX = 120, TZ = 136, col = [0, 0, 0], tiles = [];
   const nrm = (i, j, o) => {
     const i0 = Math.max(i - 1, 0), i1 = Math.min(i + 1, NX - 1), j0 = Math.max(j - 1, 0), j1 = Math.min(j + 1, NZ - 1);
     const dx = (H[j * NX + i1] - H[j * NX + i0]) / ((i1 - i0) * MAP.G), dz = (H[j1 * NX + i] - H[j0 * NX + i]) / ((j1 - j0) * MAP.G);
@@ -298,29 +299,61 @@ export function buildTerrain(scene, zoneTex, GX, GZ) {
       const sl = nrm(gi, gj, nv); nor[o] = nv[0]; nor[o + 1] = nv[1]; nor[o + 2] = nv[2];
       groundColor(x, z, y, coastDist(x, z), sl, col); cols[o] = col[0]; cols[o + 1] = col[1]; cols[o + 2] = col[2];
     }
-    const idx = new Uint32Array((w - 1) * (h - 1) * 6); let k = 0;
-    for (let j = 0; j < h - 1; j++) for (let i = 0; i < w - 1; i++) {
-      const a = j * w + i, b = a + 1, c = a + w, d = c + 1;
-      idx[k++] = a; idx[k++] = c; idx[k++] = b; idx[k++] = b; idx[k++] = c; idx[k++] = d;
-    }
+    const lods = [1, 2, 4].map((st) => {
+      const idx = new Uint32Array(((w - 1) / st) * ((h - 1) / st) * 6); let k = 0;
+      for (let j = 0; j < h - 1; j += st) for (let i = 0; i < w - 1; i += st) {
+        const a = j * w + i, b = a + st, c = a + w * st, d = c + st;
+        idx[k++] = a; idx[k++] = c; idx[k++] = b; idx[k++] = b; idx[k++] = c; idx[k++] = d;
+      }
+      return new THREE.BufferAttribute(idx, 1);
+    });
+    const idx = lods[0].array;
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
     geo.setAttribute('color', new THREE.BufferAttribute(cols, 3));
-    geo.setIndex(new THREE.BufferAttribute(idx, 1));
+    void idx; geo.setIndex(lods[0]);
     geo.computeBoundingSphere(); geo.computeBoundingBox();
     const m = new THREE.Mesh(geo, mat); m.receiveShadow = true; m.matrixAutoUpdate = false;
-    group.add(m);
+    m.userData = { lods, lod: 0, top };
+    tiles.push(m); group.add(m);
   }
 
   // distant land, same height function sampled coarsely; cells inside the map are skipped
   {
     const pos = new Float32Array(CN * CN * 3), cols = new Float32Array(CN * CN * 3);
     const hs = new Float32Array(CN * CN);
+    // Near the shore the coarse distance field is too blocky, so measure against the outline itself and
+    // make height proportional to it: the sea plane then cuts the mesh along the real coastline.
+    const rings = [...LAND, ...FAR_LAND].map((r) => {
+      let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+      for (let k = 0; k < r.length; k += 2) { if (r[k] < x0) x0 = r[k]; if (r[k] > x1) x1 = r[k]; if (r[k + 1] < z0) z0 = r[k + 1]; if (r[k + 1] > z1) z1 = r[k + 1]; }
+      return { r, x0, x1, z0, z1 };
+    });
+    const exactDist = (x, z) => {
+      let best = 1e12, inside = false;
+      for (const g of rings) {
+        const bx = Math.max(g.x0 - x, 0, x - g.x1), bz = Math.max(g.z0 - z, 0, z - g.z1);
+        if (bx * bx + bz * bz > best) continue;
+        const r = g.r;
+        if (!inside && bx === 0 && bz === 0 && pointInRing(x, z, r)) inside = true;
+        for (let i = 0, k = r.length - 2; i < r.length; k = i, i += 2) {
+          const ax = r[k], az = r[k + 1], ex = r[i] - ax, ez = r[i + 1] - az, l2 = ex * ex + ez * ez;
+          const t = l2 > 0 ? clamp(((x - ax) * ex + (z - az) * ez) / l2, 0, 1) : 0, qx = ax + ex * t - x, qz = az + ez * t - z, q = qx * qx + qz * qz;
+          if (q < best) best = q;
+        }
+      }
+      return (inside ? 1 : -1) * Math.sqrt(best);
+    };
     for (let j = 0; j < CN; j++) for (let i = 0; i < CN; i++) {
-      const x = C0 + i * CG, z = C0 + j * CG, d = coastDist(x, z), o = (j * CN + i) * 3;
+      const x = C0 + i * CG, z = C0 + j * CG, o = (j * CN + i) * 3;
       const onEdge = inMap(x, z);
-      const y = onEdge ? heightAt(x, z) : analyticHeight(x, z, d);
+      let d = coastDist(x, z), y;
+      if (onEdge) y = heightAt(x, z);
+      else {
+        if (Math.abs(d) < CG * 2.5) d = exactDist(x, z);
+        y = d <= 0 ? Math.max(d * 0.1, -26) : lerp(d * 0.1, analyticHeight(x, z, d), smoothstep(90, 520, d)) + 0.4;
+      }
       hs[j * CN + i] = y; pos[o] = x; pos[o + 1] = y; pos[o + 2] = z;
       if (d <= 0) mix3(C.shallow, C.deep, smoothstep(0, 9, -y - 0.6), col);
       else { mix3(C.far, C.grassB, noise2(x / 2100, z / 2100), col); mix3(col, C.forest, smoothstep(120, 520, y) * 0.55, col); if (onEdge) groundColor(x, z, y, d, 0, col); }
@@ -331,7 +364,7 @@ export function buildTerrain(scene, zoneTex, GX, GZ) {
     for (let j = 0; j < CN - 1; j++) for (let i = 0; i < CN - 1; i++) {
       if (i >= i0 && i < i1 && j >= j0 && j < j1) continue;
       const a = j * CN + i, b = a + 1, c = a + CN, d = c + 1;
-      if (hs[a] < -20 && hs[b] < -20 && hs[c] < -20 && hs[d] < -20) continue; // open water: the sea plane covers it
+      if (hs[a] < 0 && hs[b] < 0 && hs[c] < 0 && hs[d] < 0) continue; // open water: the sea plane covers it
       idx.push(a, c, b, b, c, d);
     }
     const geo = new THREE.BufferGeometry();
@@ -342,8 +375,19 @@ export function buildTerrain(scene, zoneTex, GX, GZ) {
     far.matrixAutoUpdate = false; far.position.y = -0.4; far.updateMatrix();
     group.add(far);
   }
+  // dark floor far below the sea so open water reads the same everywhere
+  const abyss = new THREE.Mesh(new THREE.PlaneGeometry(150000, 150000), new THREE.MeshStandardMaterial({ color: new THREE.Color(...C.deep), roughness: 1 }));
+  abyss.rotation.x = -Math.PI / 2; abyss.position.y = -34; group.add(abyss);
   scene.add(group);
-  return { uniforms, group, material: mat };
+  // Pick a level of detail per tile from its distance to the camera.
+  function updateLOD(cam) {
+    for (const m of tiles) {
+      const bs = m.geometry.boundingSphere, d = Math.max(0, cam.distanceTo(bs.center) - bs.radius);
+      const l = d > 14000 ? 2 : d > 6000 ? 1 : 0;
+      if (l !== m.userData.lod) { m.userData.lod = l; m.geometry.setIndex(m.userData.lods[l]); }
+    }
+  }
+  return { uniforms, group, material: mat, updateLOD };
 }
 
 // ---- wild trees (parks + wooded hills) ------------------------------------------------------
@@ -370,7 +414,7 @@ export function buildForests(scene) {
     const r1 = hash2(ci + 400, cj + 9);
     b.push(px, h, pz, 5 + r1 * 5.5, 9 + hash2(ci - 3, cj + 77) * 11, Math.floor(hash2(ci + 31, cj - 55) * (r1 > 0.8 ? 8 : 5)));
   }
-  const geo = new THREE.IcosahedronGeometry(1, 1);
+  const geo = new THREE.IcosahedronGeometry(1, 0);
   geo.translate(0, 0.72, 0);
   const mat = new THREE.MeshStandardMaterial({ roughness: 1, flatShading: true });
   const meshes = [], m4 = new THREE.Matrix4(), c = new THREE.Color(), index = new Map();

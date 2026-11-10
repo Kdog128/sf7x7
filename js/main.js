@@ -15,8 +15,8 @@ import { hex2lin, smoothstep, rng, clamp } from './util.js';
 
 const canvas = document.getElementById('c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.92;
-renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.9;
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap;
 renderer.info.autoReset = false;
 let pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
 const scene = new THREE.Scene();
@@ -72,22 +72,22 @@ function buildDemo() {
     const o = j * GX + i; if (!land[o]) continue;
     const x = MAP.minX + (i + 0.5) * CELL, z = MAP.minZ + (j + 0.5) * CELL, d = Math.hypot(x - cx, (z - cz) * 0.8), bx = Math.floor((x - X0) / BW), bz = Math.floor((z - Z0) / BH), h = ((bx * 7 + bz * 13) % 10) / 10;
     let zid;
-    if (d < 300) zid = 6; else if (d < 520) zid = h < 0.45 ? 4 : 6; else if (d < 800) zid = h < 0.25 ? 4 : h < 0.4 ? 5 : 2;
-    else if (x > X1 - BW * 4 && z > Z1 - BH * 3) zid = h < 0.5 ? 8 : 7; else if (d < 1050) zid = h < 0.2 ? 3 : 2; else zid = h < 0.15 ? 3 : 1;
+    if (d < 230) zid = 6; else if (d < 380) zid = h < 0.5 ? 4 : 6; else if (d < 760) zid = h < 0.12 ? 4 : h < 0.22 ? 5 : 2;
+    else if (x > X1 - BW * 4 && z > Z1 - BH * 3) zid = h < 0.5 ? 8 : 7; else if (d < 1000) zid = h < 0.15 ? 3 : 2; else zid = h < 0.12 ? 3 : 1;
     zone[o] = zid;
   }
   refreshOverlay(0, 0, GX - 1, GZ - 1); refreshCells(toI(X0) - 4, toJ(Z0) - 4, toI(X1) + 4, toJ(Z1) + 4);
   const keep = sim.rand; sim.rand = r;
   for (let k = 0; k < 2600; k++) stepSim(1, -100);
-  sim.rand = keep; sim.time = 16.5; game.undo.clear();
-  rig.set(cx + 60, cz + 120, 1500, 0.62, 0.5);
+  sim.rand = keep; sim.time = 13.5; game.undo.clear();
+  rig.set(cx + 60, cz + 120, 1350, 0.62, 0.42);
 }
 
 // ---- frame ---------------------------------------------------------------------------------------
 function litFractions(h) {
   const t = h < 12 ? h + 24 : h;
-  const home = 0.07 + 0.5 * smoothstep(16.5, 19.5, t) * (1 - smoothstep(22, 26.5, t)) + 0.22 * smoothstep(29.3, 30.3, t) * (1 - smoothstep(31, 32, t));
-  const office = 0.05 + 0.6 * smoothstep(15.5, 17.5, t) * (1 - smoothstep(19, 24.5, t));
+  const home = 0.05 + 0.36 * smoothstep(16.5, 19.5, t) * (1 - smoothstep(22, 26.5, t)) + 0.22 * smoothstep(29.3, 30.3, t) * (1 - smoothstep(31, 32, t));
+  const office = 0.04 + 0.5 * smoothstep(15.5, 17.5, t) * (1 - smoothstep(19, 24.5, t));
   const shop = 0.1 + 0.75 * smoothstep(16, 18, t) * (1 - smoothstep(21.5, 24, t));
   return [home, office, shop, 0.22];
 }
@@ -107,7 +107,7 @@ function tick(dt) {
   buildingUniforms.uLit.value.set(...litFractions(hour));
   buildingUniforms.uSkyRefl.value.copy(sky.zen).lerp(sky.hor, 0.5);
   rRender.update(6); bRender.update(rig.target.x, rig.target.z, 7); flushOverlay();
-  sky.update(camera, rig.target, rig.dist, game.clock);
+  sky.update(camera, rig.target, rig.dist, game.clock); terrain.updateLOD(camera.position);
   uiAcc += dt; if (uiAcc > 0.2) { uiAcc = 0; if (game.mode === 'play') game.ui.update(); }
   if (game.mode === 'play') { autoAcc += dt; if (autoAcc > 180) { autoAcc = 0; if (stats.count || roads.segs.size) { saveSlot(game, 3); game.ui.toast('Autosaved'); } } }
 }
@@ -127,8 +127,7 @@ function frame(now) {
   fpsN++; fpsT += dt;
   if (fpsT >= 1) {
     fps = fpsN / fpsT; fpsN = 0; fpsT = 0;
-    const i = renderer.info.render;
-    game.ui.setDebug(`${fps.toFixed(0)} fps  ${i.calls} draws  ${(i.triangles / 1000).toFixed(0)}k tris  ${fmt2(stats.count)} buildings  ${roads.segs.size} road segments`);
+    showDebug();
     // drop resolution a step when the frame rate stays low, and restore it when there is headroom
     const maxPR = Math.min(window.devicePixelRatio || 1, 2);
     if (fps < 27) { if (++slow >= 3 && pixelRatio > 1) { pixelRatio = Math.max(1, pixelRatio - 0.25); resize(); slow = 0; } }
@@ -136,9 +135,13 @@ function frame(now) {
   }
 }
 const fmt2 = (n) => n.toLocaleString('en-US');
+function showDebug() {
+  const i = renderer.info.render;
+  game.ui.setDebug(`${fps.toFixed(0)} fps  ${i.calls} draws  ${(i.triangles / 1000).toFixed(0)}k tris  ${fmt2(stats.count)} buildings  ${roads.segs.size} road segments`);
+}
 
 // ---- test hooks ----------------------------------------------------------------------------------
-window.advanceTime = (ms) => { manual = true; const n = Math.max(1, Math.round(ms / (1000 / 60))); for (let i = 0; i < n; i++) tick(1 / 60); render(); };
+window.advanceTime = (ms) => { manual = true; const n = Math.max(1, Math.round(ms / (1000 / 60))); for (let i = 0; i < n; i++) tick(1 / 60); render(); showDebug(); };
 window.resumeRealtime = () => { manual = false; last = performance.now(); };
 window.render_game_to_text = () => {
   const T = game.tools.state, tier = tierOf(stats.pop);

@@ -5,12 +5,12 @@ import { clamp, lerp, smoothstep } from './util.js';
 const col = (h) => new THREE.Color(h);
 // keyed on sun height (sin of elevation)
 const KEYS = [
-  { s: -0.30, zen: col('#070b16'), hor: col('#141b2b'), sun: col('#8ea4cc'), si: 0.42, hemiS: col('#3a4a6b'), hemiG: col('#12151c'), hi: 0.42 },
-  { s: -0.08, zen: col('#1c2947'), hor: col('#4b4a63'), sun: col('#8ea4cc'), si: 0.25, hemiS: col('#57628a'), hemiG: col('#1c1d24'), hi: 0.6 },
-  { s: 0.02, zen: col('#3f5683'), hor: col('#d79a78'), sun: col('#ff9d5c'), si: 0.9, hemiS: col('#9a93a8'), hemiG: col('#3a332d'), hi: 0.85 },
-  { s: 0.14, zen: col('#5a7cab'), hor: col('#e6c6a3'), sun: col('#ffc890'), si: 2.3, hemiS: col('#c0c6d2'), hemiG: col('#5a5245'), hi: 1.0 },
-  { s: 0.40, zen: col('#6a8fbd'), hor: col('#cdd5d8'), sun: col('#fff1dc'), si: 3.1, hemiS: col('#d3dde8'), hemiG: col('#746d5d'), hi: 1.15 },
-  { s: 1.00, zen: col('#6c93c4'), hor: col('#c6d1d8'), sun: col('#fff6e8'), si: 3.3, hemiS: col('#d6e0ec'), hemiG: col('#7a7362'), hi: 1.2 },
+  { s: -0.30, zen: col('#080c18'), hor: col('#1a2233'), sun: col('#8ea4cc'), si: 1.1, hemiS: col('#6478a4'), hemiG: col('#45423d'), hi: 2.3 },
+  { s: -0.08, zen: col('#1c2947'), hor: col('#4b4a63'), sun: col('#8ea4cc'), si: 0.6, hemiS: col('#6a769c'), hemiG: col('#45423d'), hi: 1.9 },
+  { s: 0.02, zen: col('#3f5683'), hor: col('#d79a78'), sun: col('#ff9d5c'), si: 0.9, hemiS: col('#a39cb0'), hemiG: col('#4a433c'), hi: 1.25 },
+  { s: 0.14, zen: col('#5a7cab'), hor: col('#e6c6a3'), sun: col('#ffc890'), si: 2.2, hemiS: col('#c6ccd8'), hemiG: col('#787062'), hi: 1.75 },
+  { s: 0.40, zen: col('#6a8fbd'), hor: col('#cdd5d8'), sun: col('#fff1dc'), si: 2.7, hemiS: col('#d3dde8'), hemiG: col('#857e6e'), hi: 1.7 },
+  { s: 1.00, zen: col('#6c93c4'), hor: col('#c6d1d8'), sun: col('#fff6e8'), si: 2.9, hemiS: col('#d6e0ec'), hemiG: col('#8a8372'), hi: 1.8 },
 ];
 
 export class Sky {
