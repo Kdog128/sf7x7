@@ -2,3 +2,4 @@ tools
 supabase
 progress.md
 .git
+dev-server.mjs

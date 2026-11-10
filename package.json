@@ -1,0 +1,14 @@
+{
+  "name": "sf7x7",
+  "private": true,
+  "version": "1.0.0",
+  "description": "A San Francisco city builder in the browser. Static files, no build step.",
+  "type": "module",
+  "scripts": {
+    "dev": "node dev-server.mjs",
+    "start": "node dev-server.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
