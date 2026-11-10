@@ -146,13 +146,46 @@ export function makeLife(game) {
     for (const [id, from] of chain) { const s = roads.segs.get(id), fwd = endKey(s, 0) === from, p = s.pts; if (fwd) for (let q = 2; q < p.length; q += 2) out.push(p[q], p[q + 1]); else for (let q = p.length - 4; q >= 0; q -= 2) out.push(p[q], p[q + 1]); }
     out.push(...part(B.seg, bestKey === g0 ? 0 : B.seg.len, B.s).slice(2)); return out;
   }
+  // Ferries keep to the water: the shortest course between two landings that does not cross land.
+  const WG = 80, WW = Math.ceil((MAP.maxX - MAP.minX) / WG), WH = Math.ceil((MAP.maxZ - MAP.minZ) / WG);
+  function waterGrid() { const wet = new Uint8Array(WW * WH); for (let j = 0; j < WH; j++) for (let i = 0; i < WW; i++) wet[j * WW + i] = coastDist(MAP.minX + (i + 0.5) * WG, MAP.minZ + (j + 0.5) * WG) < -24 ? 1 : 0; return wet; }
+  function waterRoute(x0, z0, x1, z1, wet) {
+    const cx = (c) => MAP.minX + ((c % WW) + 0.5) * WG, cz = (c) => MAP.minZ + (Math.floor(c / WW) + 0.5) * WG;
+    const entry = (x, z) => { const i0 = Math.floor((x - MAP.minX) / WG), j0 = Math.floor((z - MAP.minZ) / WG); let best = -1, bd = 1e9; for (let dj = -8; dj <= 8; dj++) for (let di = -8; di <= 8; di++) { const i = i0 + di, j = j0 + dj; if (i < 0 || j < 0 || i >= WW || j >= WH || !wet[j * WW + i]) continue; const d = Math.hypot(MAP.minX + (i + 0.5) * WG - x, MAP.minZ + (j + 0.5) * WG - z); if (d < bd) { bd = d; best = j * WW + i; } } return best; };
+    const a = entry(x0, z0), b = entry(x1, z1); if (a < 0 || b < 0) return null;
+    const open = (ax, az, bx, bz) => { const n = Math.ceil(Math.hypot(bx - ax, bz - az) / 30); for (let k = 1; k < n; k++) if (coastDist(ax + ((bx - ax) * k) / n, az + ((bz - az) * k) / n) > -10) return false; return true; };
+    let cells = [a];
+    if (a !== b && !open(cx(a), cz(a), cx(b), cz(b))) {
+      const g = new Float32Array(WW * WH).fill(1e9), from = new Int32Array(WW * WH).fill(-1), hf = [], hc = [], bi = b % WW, bj = Math.floor(b / WW);
+      const push = (f, c) => { let k = hf.length; hf.push(f); hc.push(c); while (k > 0) { const q = (k - 1) >> 1; if (hf[q] <= f) break; hf[k] = hf[q]; hc[k] = hc[q]; k = q; } hf[k] = f; hc[k] = c; };
+      const pop = () => { const c = hc[0], f = hf.pop(), cc = hc.pop(), n = hf.length; if (n) { let k = 0; for (;;) { let q = k * 2 + 1; if (q >= n) break; if (q + 1 < n && hf[q + 1] < hf[q]) q++; if (hf[q] >= f) break; hf[k] = hf[q]; hc[k] = hc[q]; k = q; } hf[k] = f; hc[k] = cc; } return c; };
+      g[a] = 0; push(0, a); let found = false;
+      while (hf.length) {
+        const c = pop(); if (c === b) { found = true; break; }
+        const i = c % WW, j = Math.floor(c / WW);
+        for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+          if (!di && !dj) continue; const ni = i + di, nj = j + dj; if (ni < 0 || nj < 0 || ni >= WW || nj >= WH) continue;
+          const o = nj * WW + ni; if (!wet[o] || (di && dj && (!wet[j * WW + ni] || !wet[nj * WW + i]))) continue;
+          const ng2 = g[c] + (di && dj ? 1.4142 : 1); if (ng2 < g[o]) { g[o] = ng2; from[o] = c; push(ng2 + Math.hypot(ni - bi, nj - bj), o); }
+        }
+      }
+      if (!found) return null;
+      cells = []; for (let c = b; c >= 0; c = from[c]) cells.push(c); cells.reverse();
+    } else if (a !== b) cells.push(b);
+    // keep only the corners that are needed, then round them off
+    const pts = cells.map((c) => [cx(c), cz(c)]), keep = [pts[0]];
+    for (let k = 0; k < pts.length - 1;) { let q = pts.length - 1; while (q > k + 1 && !open(pts[k][0], pts[k][1], pts[q][0], pts[q][1])) q--; keep.push(pts[q]); k = q; }
+    let line = [[x0, z0], ...keep, [x1, z1]];
+    for (let pass = 0; pass < 2; pass++) { const out = [line[0]]; for (let k = 1; k < line.length - 1; k++) { const p = line[k - 1], c = line[k], n = line[k + 1]; out.push([c[0] + (p[0] - c[0]) * 0.25, c[1] + (p[1] - c[1]) * 0.25], [c[0] + (n[0] - c[0]) * 0.25, c[1] + (n[1] - c[1]) * 0.25]); } out.push(line[line.length - 1]); line = out; }
+    return line.flat();
+  }
   function rebuildTransit() {
     for (const m of [...lineGroup.children]) { m.geometry.dispose(); m.material.dispose(); lineGroup.remove(m); }
-    vehicles = []; let ns = 0, ng = 0;
+    vehicles = []; let ns = 0, ng = 0, wet = null;
     for (const l of city.lines) {
       const T = LINE_TYPES[l.type], st = l.stops; let path = [];
       for (let k = 0; k + 3 < st.length; k += 2) {
-        let leg = l.type === 'ferry' ? null : route(st[k], st[k + 1], st[k + 2], st[k + 3]); if (!leg || leg.length < 4) leg = [st[k], st[k + 1], st[k + 2], st[k + 3]];
+        let leg = l.type === 'ferry' ? waterRoute(st[k], st[k + 1], st[k + 2], st[k + 3], wet || (wet = waterGrid())) : route(st[k], st[k + 1], st[k + 2], st[k + 3]); if (!leg || leg.length < 4) leg = [st[k], st[k + 1], st[k + 2], st[k + 3]];
         if (path.length) leg = leg.slice(2); path.push(...leg);
       }
       const clean = []; for (let k = 0; k < path.length; k += 2) if (!clean.length || Math.hypot(path[k] - clean[clean.length - 2], path[k + 1] - clean[clean.length - 1]) > 0.5) clean.push(path[k], path[k + 1]);

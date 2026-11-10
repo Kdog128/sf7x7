@@ -289,11 +289,11 @@ export const CATALOG = [
   S('paintedladies', 'Painted Ladies', 'landmark', 7, 3, 16, 300, 1, 0, { tour: 5, amen: [350, 0.5] }, { site: [-122.4330, 37.7763], res: 40, parody: 'Tinted Ladies' }),
   S('coit', 'Coit Tower', 'landmark', 4, 4, 64, 350, 2, 12, { tour: 5, amen: [450, 0.5] }, { site: [-122.4058, 37.8024], parody: 'Quoit Tower' }),
   S('alcatraz', 'Alcatraz', 'landmark', 10, 6, 30, 500, 4, 60, { tour: 9, amen: [300, 0.2] }, { site: [-122.4230, 37.8267], parody: 'Alcatrash' }),
-  S('palace', 'Palace of Fine Arts', 'landmark', 9, 9, 45, 700, 4, 30, { tour: 6, amen: [500, 0.6] }, { site: [-122.4484, 37.8029], green: true, parody: 'Palace of Fine Farts' }),
+  S('palace', 'Palace of Fine Arts', 'landmark', 9, 9, 49, 700, 4, 30, { tour: 6, amen: [500, 0.6] }, { site: [-122.4484, 37.8029], green: true, parody: 'Palace of Fine Farts' }),
   S('ferry', 'Ferry Building', 'landmark', 14, 3, 75, 800, 5, 400, { tour: 7, amen: [500, 0.5] }, { site: [-122.3937, 37.7955], parody: 'Fairy Building' }),
   S('ghirardelli', 'Ghirardelli Square', 'landmark', 8, 6, 34, 600, 4, 300, { tour: 6, amen: [400, 0.45] }, { site: [-122.4226, 37.8058], parody: 'Girardeli Square' }),
   S('conservatory', 'Conservatory of Flowers', 'landmark', 8, 4, 22, 400, 3, 20, { tour: 4, amen: [450, 0.6] }, { site: [-122.4602, 37.7726], green: true, parody: 'Conservatory of Showers' }),
-  S('oracle', 'Oracle Park', 'landmark', 22, 22, 44, 2400, 30, 800, { tour: 6, cap: 41000, noise: [520, 0.35], league: 'MLB' }, { site: [-122.3893, 37.7786], parody: 'Oracular Park' }),
+  S('oracle', 'Oracle Park', 'landmark', 22, 22, 44, 2400, 30, 800, { tour: 6, cap: 41331, noise: [520, 0.35], league: 'MLB' }, { site: [-122.3893, 37.7786], parody: 'Oracular Park' }),
   S('superclub', 'Superclub', 'night', 6, 6, 20, 380, 6, 120, { cap: 2400, noise: [420, 0.55], venue: 'club' }),
   S('club', 'Club', 'night', 3, 4, 10, 90, 2, 30, { cap: 450, noise: [260, 0.45], venue: 'club' }),
   S('popup', 'Warehouse pop-up', 'night', 5, 5, 13, 30, 1, 15, { cap: 800, noise: [380, 0.6], venue: 'club', temp: 3 }),
@@ -301,7 +301,7 @@ export const CATALOG = [
   S('comedy', 'Comedy club', 'night', 2, 3, 9, 60, 1, 16, { cap: 180, noise: [120, 0.15], venue: 'comedy' }),
   S('ballpark', 'Ballpark', 'sport', 22, 22, 44, 2000, 28, 700, { cap: 40000, noise: [520, 0.35], league: 'MLB', tour: 3 }),
   S('arena', 'Arena', 'sport', 16, 16, 34, 1600, 24, 600, { cap: 18000, noise: [420, 0.3], league: 'NBA,WNBA,NHL', tour: 3 }),
-  S('stadium', 'Football stadium', 'sport', 28, 24, 56, 3000, 36, 900, { cap: 68000, noise: [650, 0.4], league: 'NFL', tour: 4 }),
+  S('stadium', 'Football stadium', 'sport', 28, 24, 56, 3000, 36, 900, { cap: 68500, noise: [650, 0.4], league: 'NFL', tour: 4 }),
   S('soccer', 'Soccer stadium', 'sport', 20, 18, 36, 1200, 16, 350, { cap: 18000, noise: [420, 0.3], league: 'MLS', tour: 2 }),
   S('tennis', 'Tennis center', 'sport', 12, 10, 14, 500, 6, 120, { cap: 9000, noise: [200, 0.12], league: 'Tennis', tour: 2, amen: [250, 0.2] }),
   S('golf', 'Golf course', 'sport', 0, 0, 12, 1.2, 0.02, 0, { amen: [320, 0.5], league: 'Golf', tour: 2 }, { rect: true, green: true, per: true, min: 24 }),
@@ -374,10 +374,10 @@ const BIZ = {
 const GEN = [['Corner', 'Bay', 'Fog City', 'Golden', 'Sutro', 'Presidio', 'Twin Peaks', 'Pacific'], ['Sourdough Bakery', 'Coffee Roasters', 'Burrito Shop', 'Market', 'Wine Bar', 'Boba', 'Hardware', 'Books', 'Diner', 'Cafe']];
 export function businessName(hoodName, nr) { const t = BIZ[hoodName] || GEN; return `${nr.pick(t[0])} ${nr.pick(t[1])}`; }
 export const VENUE_NAMES = {
-  club: ['1015 Folsom', 'The Midway', 'Public Works', 'The Great Northern', 'Audio', 'Temple', 'Halcyon', 'Monarch', 'DNA Lounge', 'The EndUp', 'F8', 'Underground SF', 'Madarae', 'Bergerac'],
+  club: ['1015 Folsom', 'The Midway', 'Public Works', 'The Great Northern', 'Audio', 'Temple', 'Halcyon', 'Monarch', 'DNA Lounge', 'The EndUp', 'F8', 'Underground SF', 'Madarae'],
   superclub: ['Club Space West', 'The Midway Yard', 'Pier 70 Hall', 'Sutro Warehouse', 'Cow Palace Annex'],
   music: ['The Fillmore', 'The Independent', 'Great American Music Hall', 'The Warfield', 'Bimbo\'s 365', 'The Chapel', 'Bottom of the Hill', 'August Hall', 'The Regency'],
-  comedy: ['Cobb\'s Comedy Club', 'Punch Line', 'The Purple Onion', 'Cheaper Than Therapy', 'The Setup'],
+  comedy: ['Cobb\'s Comedy Club', 'Punch Line', 'Cheaper Than Therapy', 'The Setup'],
   popup: ['Pier Pop-up', 'Dogpatch Warehouse', 'Bayview Hangar', 'Mint Yard', 'Fog Machine'],
 };
 void rng;

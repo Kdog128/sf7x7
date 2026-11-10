@@ -11,6 +11,7 @@ import { tech, waveLabel } from './tech.js';
 import { culture, artistById, FAME, fameTier, ROOM, roomTier, venueRank, LEAGUES, quake, raceNow, setCircuit, olyUnlocked } from './culture.js';
 import { LINE_TYPES } from './life.js';
 import { costOf, parsePrompt, ERAS } from './place.js';
+import { PRESETS, PRESET_KEYS } from './presets.js';
 import { cloud, syncCode, setSyncCode, isPersisted } from './cloud.js';
 import { makePanels } from './panels.js';
 import { fmt } from './util.js';
@@ -238,6 +239,7 @@ export function makeUI(game) {
     const id = li.dataset.id, r = (cloudRows || []).find((q) => q.id === id) || {};
     try {
       if (act === 'load') {
+        if (!r.id) { err('That save could not be found'); if (!fromTitle) await renderCloud(); return; }   // deleted since the list was drawn: do not leave the current city for it
         const map = (r.meta && r.meta.map) || 'real';
         if (map !== MAPMODE) { const u = new URL(location.href); u.search = ''; if (map !== 'region') u.searchParams.set('map', map); u.searchParams.set('load', id); location.href = u.toString(); return; }
         await game.loadCloud(id, r.name); if (!fromTitle) openMenu(false);
@@ -268,7 +270,7 @@ export function makeUI(game) {
     importFile(game, f).then(() => { openMenu(false); game.cloudId = null; game.begin(); toast('City imported'); }).catch((x) => { err(x.message); titleErr(x.message); toast(x.message, 'warn'); });
   });
   $('newCity').addEventListener('click', () => ask('Start a new city? Anything not saved will be lost.', () => { openMenu(false); game.toSetup(); }, 'New city'));
-  $('newDemo').addEventListener('click', () => ask('Load the demo district? The current city will be replaced.', () => { game.startDemo(); openMenu(false); }));
+  $('newDemo').addEventListener('click', () => ask('Pick a starter city? Anything not saved will be lost.', () => { openMenu(false); game.toSetup(); showPresets(true); }, 'Starter cities'));
   $('confirmYes').addEventListener('click', () => { const f = pending; pending = null; $('confirm').hidden = true; if (f) f(); });
   $('confirmNo').addEventListener('click', () => { pending = null; $('confirm').hidden = true; });
   const segClick = (id, fn) => $(id).addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) { fn(b.dataset.v); refresh(); } });
@@ -287,7 +289,7 @@ export function makeUI(game) {
 
   // ---- start screen ------------------------------------------------------------------------------------
   const q = new URLSearchParams(location.search), pick = (k, d, ok) => (ok.includes(q.get(k)) ? q.get(k) : d);
-  const S = { map: MAPMODE, areas: pick('areas', 'grow', ['grow', 'open']), night: pick('night', 'real', ['real', 'neon']), start: pick('start', 'empty', ['empty', 'grid', 'south', 'demo']), era: pick('era', 'today', Object.keys(ERAS)), money: pick('money', 'unlimited', ['unlimited', 'budget']), growth: pick('growth', '1', ['0.5', '1', '2']), traffic: pick('traffic', 'cosmetic', ['cosmetic', 'sim']), lv: pick('lv', 'on', ['on', 'off']), ui: pick('ui', 'bottom', ['bottom', 'side', 'hide']), cam: pick('cam', 'angled', ['angled', 'top', 'street']), gfx: pick('gfx', 'auto', ['low', 'medium', 'high', 'ultra', 'auto']), fog: pick('fog', 'on', ['on', 'off']), rain: pick('rain', 'on', ['on', 'off']), sunsets: pick('sunsets', 'on', ['on', 'off']) };
+  const S = { map: MAPMODE, areas: pick('areas', 'grow', ['grow', 'open']), night: pick('night', 'real', ['real', 'neon']), start: pick('start', 'empty', ['empty', 'grid', 'south', 'demo', ...PRESET_KEYS]), era: pick('era', 'today', Object.keys(ERAS)), money: pick('money', 'unlimited', ['unlimited', 'budget']), growth: pick('growth', '1', ['0.5', '1', '2']), traffic: pick('traffic', 'cosmetic', ['cosmetic', 'sim']), lv: pick('lv', 'on', ['on', 'off']), ui: pick('ui', 'bottom', ['bottom', 'side', 'hide']), cam: pick('cam', 'angled', ['angled', 'top', 'street']), gfx: pick('gfx', 'auto', ['low', 'medium', 'high', 'ultra', 'auto']), fog: pick('fog', 'on', ['on', 'off']), rain: pick('rain', 'on', ['on', 'off']), sunsets: pick('sunsets', 'on', ['on', 'off']) };
   const SETUP = [
     ['map', 'Map', [['region', 'SF and neighbors', 'The city at 60% scale. Daly City, South City, Oakland, Berkeley and Marin sit around it.'], ['real', 'Real-scale SF', 'The 7 by 7 mile city at true size'], ['compact', 'Compressed SF', 'Same shape at half size. Fills in faster.']]],
     ['areas', 'Nearby cities', [['grow', 'Open as you grow', 'Daly City opens at 5,000 residents, then South City, Oakland, Berkeley and Marin'], ['open', 'All open']]],
@@ -311,7 +313,12 @@ export function makeUI(game) {
     if (o.map !== MAPMODE) { const u = new URL(location.href); u.search = ''; for (const k in o) if (k !== 'map' || o.map !== 'region') u.searchParams.set(k, o[k]); u.searchParams.set('go', '1'); location.href = u.toString(); return; }
     game.startNew(o); game.begin();
   }
-  $('startGo').addEventListener('click', () => go()); $('startDemo').addEventListener('click', () => go('demo'));
+  $('startGo').addEventListener('click', () => go(['empty', 'grid', 'south'].includes(S.start) ? S.start : 'empty'));
+  // starter cities: a short list under the button, one click to open one
+  $('presetList').innerHTML = PRESETS.map((p) => `<button class="preset" data-k="${p.k}"><b>${esc(p.name)}</b><span>${esc(p.note)}</span></button>`).join('') + '<p class="note">Each one keeps the Embarcadero, Market, Mission, Van Ness and Geary where they really are.</p>';
+  function showPresets(on) { const box = $('presetList'); box.hidden = !on; $('startDemo').setAttribute('aria-expanded', String(on)); if (on) { $('titleCloud').hidden = true; $('setup').open = false; } }
+  $('startDemo').addEventListener('click', () => showPresets($('presetList').hidden));
+  $('presetList').addEventListener('click', (e) => { const b = e.target.closest('[data-k]'); if (b) { showPresets(false); go(b.dataset.k); } });
   $('startCloud').addEventListener('click', async () => {
     const box = $('titleCloud'); if (!box.hidden) { box.hidden = true; return; } box.hidden = false; titleErr(''); box.innerHTML = '<p class="note">Loading saves</p>';
     try { cloudRows = await cloud.list(); box.innerHTML = `<ul class="slots">${cloudRows.map((r) => rowHtml(r, true)).join('') || '<li class="meta">No cloud saves for this browser yet.</li>'}</ul><div class="row"><button class="btn sm ghost" id="titleImport">Import from a file</button></div>`; icons(); $('titleImport').addEventListener('click', pickFile); }

@@ -49,7 +49,7 @@ Changes:
 - Buildings: blocks.js adds rowhouses (Victorian, Italianate, Edwardian, Sunset stucco, Marina), bay-window flats, six shop kinds, parking garages, lofts, theatres and 18 industry kinds. Warmer pastel palettes, lower floor ranges outside downtown.
 - Night: post.js (bloom and grade), lamp posts with light pools, glowing signs, floodlit landmarks and venues, roadway lamps and beacons on both bridges. Two modes, Realistic and Stylized, on the start screen and in the time-of-day pop-over. Post-processing is off on Low graphics and with ?fx=0.
 - Cars, transit and people: models.js. Five car bodies with head and tail lamps, bus, cable car, tram, ferry, walkers with a walk cycle, scooters. These are coded, not from an asset pack.
-- Demo district: mostly rowhouses and flats, shop corridors, one small tower cluster, industry and port in the south-east corner.
+- Demo district: replaced by the starter cities below.
 - three.js and Lucide are vendored under vendor/ (no CDN at run time).
 - Fixes found in QA: a degenerate road quad wrote a zero normal, which became a NaN pixel that bloom spread into a fully black frame at some window sizes (normals are now guarded in the mesh builder and the bloom and grade passes drop NaN and infinite pixels); rain streaks drew lines across the screen when one end wrapped; a snapped camera looked at sea level for a moment; team gating by year (Giants 1958, Warriors 1962, 49ers 1946, Sharks 1991, Earthquakes 1996, Valkyries 2025).
 
@@ -58,3 +58,15 @@ Facts rechecked against sources: Transamerica Pyramid 260 m, Salesforce Tower 32
 Verified in the browser (software GL): demo load, nearby city lock message, daily unlock, save and load of open areas, Neighborhoods tab list, night mode toggle, ?fx=0, 390 px layout, all 12 landmarks at their real sites on the region map (Transamerica needs its lot cleared when the demo is loaded), bridges at night, each vehicle and person model up close.
 
 Still not verified: frame rate on a real GPU (post-processing adds cost; Auto drops it under 20 fps), hosting the Olympics, the 1999 era start, hand-drawn ferry and cable lines, removing a transit line, audible sound, the Claude endpoint, Budget mode balance.
+
+## Starter cities and second check
+- `js/presets.js`: four small built-up districts at their real locations, picked from "Starter cities" on the start screen or in the menu: Market Street, The Mission, Outer Sunset, North Beach.
+- Every one draws the same staple streets from real coordinates (the Embarcadero, Market, Mission, Van Ness, Geary) and places the Ferry Building. North Beach adds Columbus Avenue and Coit Tower.
+- Each district has its own rotated grid, civic lots, zoning rule, named transit lines and a fixed seed, so it is the same every load. Populations stay under 5,000 (about 1,900 to 4,500), so Daly City is still closed.
+- Loose ends are tidied after drawing: streets that stop just short of another are joined, stubs under 100 m are removed. The only dead ends left are the far ends of the staples.
+- Ferries now route over water between landings instead of sailing a straight line across land.
+- Second check fixes: stale cloud save row shows an error instead of leaving the page; closed venues Bergerac and The Purple Onion removed; Palace of Fine Arts 49 m; Oracle Park 41,331; football stadium 68,500; Twin Peaks 276 m and 282 m; Mount Davidson longitude.
+- No hospital in the Market Street starter: the 64 m lot does not fit the 80 m blocks. Add one after widening a block.
+
+Verified in the browser (software GL): all four starter cities on the region map, Market Street on the real map, the Mission on the compact map through the map switch link; day, night and top-down views; no console errors; menu path to starter cities; slot save and load round trip; 390 px start screen; hand-drawn ferry line with the boat staying on the water.
+Not verified: frame rate on a real GPU, sound output, Olympics, 1999 era start, Budget mode balance, the Claude detail endpoint. Muni line names in the starter cities are from memory.

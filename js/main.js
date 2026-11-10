@@ -1,7 +1,7 @@
 // 7x7: boot, main loop and the glue between systems.
 import * as THREE from 'three';
-import { MAP, MAPMODE, K, buildTerrain, buildForests, heightAt, ll, setEdits, HAS_AREAS, AREAS, areas, areaOpen, coastDist } from './terrain.js';
-import { GX, GZ, zone, land, zoneTex, initLand, flushOverlay, refreshOverlay, resetWorld, updateLand, refreshAreas, stats, state as W, ZONES, tierOf, TIERS, buildings, toI, toJ, CELL, removeBuilding } from './world.js';
+import { MAP, MAPMODE, K, buildTerrain, buildForests, heightAt, ll, setEdits, HAS_AREAS, AREAS, areas, areaOpen } from './terrain.js';
+import { GX, GZ, zone, land, zoneTex, initLand, flushOverlay, refreshOverlay, resetWorld, updateLand, refreshAreas, stats, state as W, ZONES, tierOf, TIERS, buildings, CELL } from './world.js';
 import { BuildingRenderer, buildingUniforms } from './buildings.js';
 import { Roads, RoadRenderer } from './roads.js';
 import { Sky } from './sky.js';
@@ -11,7 +11,7 @@ import { makeUndo } from './undo.js';
 import { makeTools } from './tools.js';
 import { makeUI } from './ui.js';
 import { slots, saveSlot, serialize, deserialize, metaOf } from './save.js';
-import { hex2lin, smoothstep, rng } from './util.js';
+import { hex2lin, smoothstep } from './util.js';
 import './structures.js';
 import './blocks.js';
 import { city, initCity, resetCity2, stepCity, recompute, dailyEconomy, markDirty, heatTex, heatScale, paintOverlay, priceIndex, post } from './city.js';
@@ -19,9 +19,10 @@ import { tech, initTech, resetTech, techDay, pulse } from './tech.js';
 import { culture, initCulture, resetCulture, cultureDay, stepCulture, stepTips, onAdded as cultureAdded, onRemoved as cultureRemoved } from './culture.js';
 import { makeLife } from './life.js';
 import { makeAudio } from './audio.js';
-import { place, drawStreets, southHighway, ERAS } from './place.js';
+import { drawStreets, southHighway, ERAS } from './place.js';
 import { cloud } from './cloud.js';
 import { makePost } from './post.js';
+import { PRESETS, PRESET_KEYS, buildPreset } from './presets.js';
 
 const canvas = document.getElementById('c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
@@ -76,13 +77,14 @@ const game = {
     if (o.areas === 'open') game.setAreas([], true); c.night = o.night === 'neon' ? 'neon' : 'real';
     sim.year0 = ERAS[o.era].year; sim.growth = +o.growth || 1; city.treasury = Math.round(4000 * priceIndex(sim.year0));
     const [x, z] = ll(START[0], START[1]); rig.set(x, z, START[2], 0.5, 0.82);
-    if (o.start === 'demo') buildDemo();
+    const preset = o.start === 'demo' ? 'market' : PRESET_KEYS.includes(o.start) ? o.start : null;
+    if (preset) buildPreset(game, preset);
     else if (o.start === 'grid') { const n = drawStreets(game); rig.set(...ll(-122.435, 37.765), 9000 * Math.max(K, 0.55), 0.3, 0.9); game.ui.toast(`${n} streets drawn. Zone beside them to begin.`); }
     else if (o.start === 'south') { southHighway(game); rig.set(...ll(-122.41, 37.745), 6000 * Math.max(K, 0.55), 0.2, 0.85); }
     game.undo.clear(); game.setGfx(o.gfx); if (o.cam !== 'angled') game.setCam(o.cam, true); else game.camMode = 'angled'; recompute(); game.ui.setHud(true); game.ui.resetTier(); game.ui.refresh(true);
-    post(o.start === 'demo' ? 'New district downtown. Half the windows are lit already.' : sim.year0 < 1910 ? 'The fires are out. Time to build it again, and better.' : o.start === 'empty' ? 'Empty lots and big plans. Somebody draw a street.' : 'Streets are in. Now somebody zone something.', 'life');
+    post(preset ? `${PRESETS.find((q) => q.k === preset).name} is settled. Half the windows are lit already.` : sim.year0 < 1910 ? 'The fires are out. Time to build it again, and better.' : o.start === 'empty' ? 'Empty lots and big plans. Somebody draw a street.' : 'Streets are in. Now somebody zone something.', 'life');
   },
-  startDemo() { game.ui.go('demo'); },
+  startPreset(k) { game.ui.go(k); },
   begin() {
     if (game.mode === 'play') return; game.mode = 'play';
     document.getElementById('title').classList.add('out'); setTimeout(() => { if (game.mode === 'play') document.getElementById('title').hidden = true; }, 520);
@@ -121,49 +123,6 @@ sim.onDay = () => {
 game.ui = makeUI(game);
 
 // ---- demo district: a downtown grid on the real north-east corner of the city -------------------
-function buildDemo() {
-  const s = K < 1 ? 0.6 : 1, BW = 96, BH = 176, NXB = Math.round(20 * s), NZB = Math.round(10 * s), [ox, oz] = ll(-122.4127, 37.7868), X0 = Math.round((ox - (NXB * BW) / 2) / 8) * 8, Z0 = Math.round((oz - (NZB * BH) / 2) / 8) * 8, X1 = X0 + NXB * BW, Z1 = Z0 + NZB * BH;
-  for (let k = 0; k <= NXB; k++) roads.add(k % 5 === 0 ? 'avenue' : 'street', [X0 + k * BW, Z0, X0 + k * BW, Z1]);
-  for (let k = 0; k <= NZB; k++) roads.add(k % 5 === 0 ? 'avenue' : 'street', [X0, Z0 + k * BH, X1, Z0 + k * BH]);
-  roads.add('boulevard', [X0, Z1 - BH * 1.5, X0 + BW * NXB * 0.325, Z1 - BH * NZB * 0.45, X0 + BW * NXB * 0.675, Z0 + BH * NZB * 0.25, X1, Z0 + BH * 1.5].map((v) => Math.round(v)));
-  const cx = X0 + BW * NXB * 0.55, cz = Z0 + BH * NZB * 0.42, r = rng(7), q = s;
-  const main = [X0, Z1 - BH * 1.5, X0 + BW * NXB * 0.325, Z1 - BH * NZB * 0.45, X0 + BW * NXB * 0.675, Z0 + BH * NZB * 0.25, X1, Z0 + BH * 1.5];
-  const distToMain = (x, z) => { let b = 1e9; for (let k = 0; k + 3 < main.length; k += 2) { const ex = main[k + 2] - main[k], ez = main[k + 3] - main[k + 1], t = Math.max(0, Math.min(1, ((x - main[k]) * ex + (z - main[k + 1]) * ez) / (ex * ex + ez * ez))); b = Math.min(b, Math.hypot(x - main[k] - ex * t, z - main[k + 1] - ez * t)); } return b; };
-  const nearShore = (x, z) => coastDist(x, z) < 300;
-  // civic lots first, so the zoning flows around them
-  const lot = (key, bx, bz, w, d, front = 2) => { const i = toI(X0 + bx * BW) + 2, j = toJ(Z0 + bz * BH) + 2; return place(game, key, i, j, w, d, front, { quiet: true, free: true, now: -100, seed: 11 + bx * 7 + bz }); };
-  lot('park', Math.round(NXB * 0.3), Math.round(NZB * 0.6), 9, 19); lot('plaza', Math.round(NXB * 0.55), Math.round(NZB * 0.4), 9, 9); lot('school', Math.round(NXB * 0.2), Math.round(NZB * 0.2), 6, 6);
-  lot('fire', Math.round(NXB * 0.7), Math.round(NZB * 0.7), 4, 5); lot('police', Math.round(NXB * 0.4), Math.round(NZB * 0.2), 4, 5); lot('hospital', Math.round(NXB * 0.8), Math.round(NZB * 0.3), 8, 8);
-  lot('club', Math.round(NXB * 0.6), Math.round(NZB * 0.7), 3, 4); lot('musicvenue', Math.round(NXB * 0.5), Math.round(NZB * 0.6), 5, 6); lot('comedy', Math.round(NXB * 0.45), Math.round(NZB * 0.5), 2, 3); lot('park', Math.round(NXB * 0.75), Math.round(NZB * 0.1), 9, 9);
-  for (let j = toJ(Z0) - 2; j <= toJ(Z1) + 2; j++) for (let i = toI(X0) - 2; i <= toI(X1) + 2; i++) {
-    const o = j * GX + i; if (!land[o]) continue;
-    const x = MAP.minX + (i + 0.5) * CELL, z = MAP.minZ + (j + 0.5) * CELL, d = Math.hypot(x - cx, (z - cz) * 0.8) / q, bx = Math.floor((x - X0) / BW), bz = Math.floor((z - Z0) / BH), h = ((bx * 7 + bz * 13) % 10) / 10;
-    // a small downtown, flats and shops around it, then rowhouses: towers stay in one cluster, the way the real skyline does
-    const ax = Math.abs(((x - X0 + BW * 2.5) % (BW * 5)) - BW * 2.5), az = Math.abs(((z - Z0 + BH * 2.5) % (BH * 5)) - BH * 2.5), corridor = Math.min(ax, az, distToMain(x, z)) < 44;
-    let zid;
-    if (d < 190) zid = h < 0.3 ? 9 : 6; else if (d < 320) zid = h < 0.35 ? 4 : h < 0.6 ? 11 : h < 0.8 ? 6 : 2; else if (d < 520) zid = corridor ? (h < 0.5 ? 11 : 3) : h < 0.1 ? 5 : 2;
-    else if (x > X1 - BW * 3 && z > Z1 - BH * 2.5) zid = nearShore(x, z) ? 12 : h < 0.4 ? 8 : 7; else if (corridor) zid = h < 0.2 ? 10 : h < 0.45 ? 11 : 3; else zid = d < 800 && h < 0.25 ? 2 : 1;
-    zone[o] = zid;
-  }
-  refreshOverlay(0, 0, GX - 1, GZ - 1); refreshCells(toI(X0) - 4, toJ(Z0) - 4, toI(X1) + 4, toJ(Z1) + 4);
-  city.lines.push({ id: city.nextLine++, type: 'bus', name: '38 Geary', color: '#c2572f', stops: [X0, Z0 + BH * 5 * s, X0 + BW * NXB * 0.25, Z0 + BH * 5 * s, X0 + BW * NXB * 0.5, Z0 + BH * 5 * s, X0 + BW * NXB * 0.75, Z0 + BH * 5 * s, X1, Z0 + BH * 5 * s].map(Math.round) });
-  city.lines.push({ id: city.nextLine++, type: 'cable', name: 'Powell and Hyde', color: '#8a2f2a', stops: [X0 + BW * 10 * s, Z0, X0 + BW * 10 * s, Z0 + BH * NZB * 0.33, X0 + BW * 10 * s, Z0 + BH * NZB * 0.66, X0 + BW * 10 * s, Z1].map(Math.round) });
-  game.life.rebuildTransit();
-  const keep = sim.rand, od = sim.onDay; sim.rand = r; sim.onDay = null; recompute();
-  for (let k = 0; k < 2600; k++) { stepSim(1, -100); if (k % 400 === 0) recompute(); }
-  // the middle few blocks get their towers now instead of waiting for the population to catch up
-  for (const b of [...buildings.values()]) {
-    if (b.sp || !(b.zone === 6 || b.zone === 9 || b.zone === 4 || b.zone === 11)) continue;
-    const x = MAP.minX + (b.i + b.w / 2) * CELL, z = MAP.minZ + (b.j + b.d / 2) * CELL, d = Math.hypot(x - cx, (z - cz) * 0.8) / q;
-    const want = Math.min(b.zone === 11 ? 4 : 5, d < 110 ? 4 + (b.seed % 3 === 0 ? 1 : 0) : d < 210 ? 3 + (b.seed % 2) : d < 330 ? 2 + (b.seed % 2) : 0);
-    if (want <= b.level || (want >= 4 && b.w * b.d < 9)) continue;
-    removeBuilding(b.id); spawn({ i: b.i, j: b.j, w: b.w, d: b.d, zone: b.zone, front: b.front }, want, b.seed, -100);
-  }
-  recompute();
-  sim.rand = keep; sim.onDay = od; sim.time = 16.2; sim.day = 1; game.undo.clear();
-  for (const b of buildings.values()) b.born = 1;
-  rig.set(cx + 60, cz + 120, 1350 * (K < 1 ? 0.75 : 1), 0.62, 0.42);
-}
 
 // ---- frame ---------------------------------------------------------------------------------------
 function litFractions(h) {

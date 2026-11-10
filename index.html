@@ -113,9 +113,10 @@
     <p class="tag">A San Francisco city builder. Lay roads, zone land and watch it grow from a few houses to a metropolis.</p>
     <div class="title-actions">
       <button class="btn primary" id="startGo">Start building</button>
-      <button class="btn" id="startDemo">Open a demo district</button>
+      <button class="btn" id="startDemo" aria-expanded="false" aria-controls="presetList">Starter cities</button>
       <button class="btn ghost" id="startCloud">Load a saved city</button>
     </div>
+    <div class="presets" id="presetList" hidden></div>
     <details class="setup" id="setup">
       <summary>City options</summary>
       <div class="setup-grid" id="setupGrid"></div>
@@ -166,7 +167,7 @@
       <h3>City</h3>
       <div class="row">
         <button class="btn" id="newCity">New city</button>
-        <button class="btn" id="newDemo">Load demo district</button>
+        <button class="btn" id="newDemo">Starter cities</button>
       </div>
       <div class="confirm" id="confirm" hidden><span id="confirmMsg"></span><button class="btn danger" id="confirmYes">Replace city</button><button class="btn ghost" id="confirmNo">Cancel</button></div>
     </section>
