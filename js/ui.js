@@ -81,7 +81,7 @@ export function makeUI(game) {
   $('options').addEventListener('click', (e) => {
     const b = e.target.closest('[data-act]'); if (!b || b.tagName === 'INPUT') return;
     const t = T(), a = b.dataset.act, v = b.dataset.v;
-    if (a === 'tool') return game.tools.setTool(v);
+    if (a === 'tool') { if (t.tool === 'hood' && game.overlay === 'hood') game.setOverlay('none'); return game.tools.setTool(v); }
     if (a === 'zone') t.zoneId = +v;
     else if (a === 'buildCat') { t.buildCat = v; t.buildKey = v === 'fill' ? 'smartfill' : CATALOG.find((c) => c.cat === v && !c.hidden).k; }
     else if (a === 'rot') t.buildRot = (t.buildRot + 1) & 3;
