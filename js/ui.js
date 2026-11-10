@@ -35,7 +35,7 @@ export function makeUI(game) {
   const seg = (name, cur, items) => `<div class="seg" role="group">${items.map(([v, l, t]) => `<button data-act="${name}" data-v="${v}" aria-pressed="${String(v) === String(cur)}" title="${t || ''}">${l}</button>`).join('')}</div>`;
   const chip = (act, v, on, label, sub = '', dis = false, title = '') => `<button class="sw" data-act="${act}" data-v="${v}" aria-pressed="${on}" ${dis ? 'disabled' : ''} title="${esc(title)}">${esc(label)}${sub ? `<em>${sub}</em>` : ''}</button>`;
   function renderOptions(force) {
-    const t = T(), key = [t.tool, t.roadType, t.roadMode, t.zoneId, t.zoneMode, t.snapGrid, t.snapAngle, t.buildCat, t.buildKey, t.lineType, t.lineDraft ? t.lineDraft.length : 0, city.lines.length, t.terraMode, t.lockMode, t.circuitMode, t.circuitDraft ? t.circuitDraft.length : 0, !!culture.f1.pts, t.hoodId, city.cfg.parody, olyUnlocked(), JSON.stringify(t.fill.items)].join('|');
+    const t = T(), key = [t.tool, t.roadType, t.roadMode, t.clip ? t.clip.segs.length : 0, t.zoneId, t.zoneMode, t.snapGrid, t.snapAngle, t.buildCat, t.buildKey, t.lineType, t.lineDraft ? t.lineDraft.length : 0, city.lines.length, t.terraMode, t.lockMode, t.circuitMode, t.circuitDraft ? t.circuitDraft.length : 0, !!culture.f1.pts, t.hoodId, city.cfg.parody, olyUnlocked(), JSON.stringify(t.fill.items)].join('|');
     if (key === optKey && !force) return; optKey = key;
     const el = $('options'); let h = '';
     if (game.readOnly) h = '<span class="hint">Shared city. Look around: drag to move, right-drag to rotate, scroll or pinch to zoom. Click a building for details.</span>';
@@ -46,9 +46,11 @@ export function makeUI(game) {
     else if (t.tool === 'hood') h = `<span class="hint">Painting ${esc(hoodName(t.hoodId))}. Drag over the blocks that belong to it.</span><div class="grp"><span>Size</span><input type="range" id="hoodSize" min="80" max="600" step="20" value="${t.hoodSize}" aria-label="Brush size" /><button class="btn sm" data-act="tool" data-v="inspect">Done</button></div>`;
     else if (t.tool === 'road') {
       h = `<div class="grp">${seg('roadType', t.roadType, Object.entries(ROAD_TYPES).map(([k, r]) => [k, r.name, r.hint]))}</div>
-        <div class="grp">${seg('roadMode', t.roadMode, [['straight', 'Straight', 'Click to place points. Right-click or Esc ends the road.'], ['curve', 'Curve', 'Click start, bend point, then end.'], ['grid', 'Grid', 'Drag a rectangle to lay a street grid.']])}</div>`;
-      if (t.roadMode === 'grid') h += `<div class="grp"><span>Block</span><input type="number" id="blockW" min="48" max="400" step="8" value="${t.blockW}" aria-label="Block width in metres" /><span>by</span><input type="number" id="blockH" min="48" max="400" step="8" value="${t.blockH}" aria-label="Block length in metres" /><span>m</span></div>`;
-      h += `<div class="grp"><label class="check"><input type="checkbox" data-act="snapGrid" ${t.snapGrid ? 'checked' : ''}/> Snap to grid</label>${t.roadMode === 'straight' ? `<label class="check"><input type="checkbox" data-act="snapAngle" ${t.snapAngle ? 'checked' : ''}/> Snap angles</label>` : ''}</div>`;
+        <div class="grp">${seg('roadMode', t.roadMode, [['straight', 'Straight', 'Click to place points. Right-click or Esc ends the road.'], ['curve', 'Curve', 'Click start, bend point, then end.'], ['blocks', 'Blocks', 'Stamp a grid of city blocks with one click.'], ['copy', 'Copy', 'Drag over roads to copy them, then click to paste.']])}</div>`;
+      const num = (id, v, min, max, step, label) => `<input type="number" id="${id}" min="${min}" max="${max}" step="${step}" value="${v}" aria-label="${label}" />`;
+      if (t.roadMode === 'blocks') h += `<div class="grp">${num('blocksX', t.blocksX, 1, 12, 1, 'Blocks across')}<span>by</span>${num('blocksZ', t.blocksZ, 1, 12, 1, 'Blocks down')}<span>blocks of</span>${num('blockW', t.blockW, 48, 400, 8, 'Block width in metres')}<span>by</span>${num('blockH', t.blockH, 48, 400, 8, 'Block length in metres')}<span>m</span></div><div class="grp"><button class="btn sm" data-act="stampRot">Turn (T)</button></div><span class="hint">Click to stamp. It lines up with a road under the cursor.</span>`;
+      else if (t.roadMode === 'copy') h += t.clip ? `<div class="grp"><button class="btn sm" data-act="stampRot">Turn (T)</button><button class="btn sm ghost" data-act="noclip">Copy something else</button></div><span class="hint">Click to paste ${t.clip.segs.length} road piece${t.clip.segs.length === 1 ? '' : 's'}.</span>` : '<span class="hint">Drag over the roads you want to copy.</span>';
+      if (t.roadMode !== 'copy' || t.clip) h += `<div class="grp"><label class="check"><input type="checkbox" data-act="snapGrid" ${t.snapGrid ? 'checked' : ''}/> Snap to grid</label>${t.roadMode === 'straight' ? `<label class="check"><input type="checkbox" data-act="snapAngle" ${t.snapAngle ? 'checked' : ''}/> Snap angles</label>` : ''}</div>`;
     } else if (t.tool === 'zone') {
       const sw = (id) => `<button class="sw" data-act="zone" data-v="${id}" aria-pressed="${t.zoneId === id}" style="--c:${id ? ZONES[id].color : '#8d867a'}" title="${id ? `${ZONES[id].name}, ${ZONES[id].density.toLowerCase()}` : 'Remove zoning'}"><i></i>${id ? (ZONES[id].spec ? ZONES[id].name : `${ZONES[id].name} ${ZONES[id].density.toLowerCase()}`) : 'De-zone'}</button>`;
       h = `<div class="grp swatches">${[1, 3, 5, 7, 2, 4, 6, 8].map(sw).join('')}</div><div class="grp swatches two">${[11, 10, 9, 12].map(sw).join('')}</div><div class="grp">${sw(0)}</div>
@@ -85,6 +87,8 @@ export function makeUI(game) {
     if (a === 'zone') t.zoneId = +v;
     else if (a === 'buildCat') { t.buildCat = v; t.buildKey = v === 'fill' ? 'smartfill' : CATALOG.find((c) => c.cat === v && !c.hidden).k; }
     else if (a === 'rot') t.buildRot = (t.buildRot + 1) & 3;
+    else if (a === 'stampRot') { t.stampRot = (t.stampRot + 1) & 3; game.tools.touch(); return; }
+    else if (a === 'noclip') t.clip = null;
     else if (a === 'site') { game.tools.siteBuild(t.buildKey); }
     else if (a === 'finish') return game.tools.finish();
     else if (a === 'rmline') { game.tools.removeLine(+v); }
@@ -110,6 +114,8 @@ export function makeUI(game) {
     if (el.id === 'blockW') t.blockW = Math.min(400, Math.max(48, Math.round(+el.value / 8) * 8 || 96));
     if (el.id === 'blockH') t.blockH = Math.min(400, Math.max(48, Math.round(+el.value / 8) * 8 || 176));
     if (el.id === 'blockW' || el.id === 'blockH') el.value = el.id === 'blockW' ? t.blockW : t.blockH;
+    if (el.id === 'blocksX' || el.id === 'blocksZ') { t[el.id] = Math.min(12, Math.max(1, Math.round(+el.value) || 3)); el.value = t[el.id]; }
+    if (/^block/.test(el.id)) game.tools.touch();
     if (el.id === 'fillPrompt') { t.fill.prompt = el.value; return; }
     refresh();
   });
@@ -139,6 +145,7 @@ export function makeUI(game) {
   $('wxSun').addEventListener('change', (e) => { city.cfg.sunsets = e.target.checked; game.sky.wx.sunset = e.target.checked ? 0.8 : 0; });
   $('fogAmt').addEventListener('input', (e) => { city.cfg.fogAmt = +e.target.value; }); $('rainAmt').addEventListener('input', (e) => { city.cfg.rainAmt = +e.target.value; });
   $('wxNow').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) game.setWeather(b.dataset.v); });
+  $('topMin').addEventListener('click', () => { city.cfg.topMin = !city.cfg.topMin; for (const p of POPS) $(p).hidden = true; document.querySelectorAll('[data-pop]').forEach((q) => q.setAttribute('aria-expanded', 'false')); refresh(true); });
   $('soundBtn').addEventListener('click', () => { const on = !game.audio.on; game.audio.setOn(on); city.cfg.sound = on; syncSound(); });
   function syncSound() { const b = $('soundBtn'); b.setAttribute('aria-pressed', String(game.audio.on)); b.innerHTML = `<i data-lucide="${game.audio.on ? 'volume-2' : 'volume-x'}"></i>`; b.title = game.audio.on ? 'Sound on' : 'Sound off'; icons(); }
 
@@ -152,6 +159,7 @@ export function makeUI(game) {
     $('landValue').checked = city.cfg.landValue; $('tipsOn').checked = city.cfg.tips; $('parody').checked = city.cfg.parody; $('parody').disabled = !!game.readOnly;
     $('cashChip').hidden = city.cfg.money !== 'budget';
     const hud = $('hud'); hud.classList.toggle('ui-side', city.cfg.ui === 'side'); hud.classList.toggle('ui-ro', !!game.readOnly);
+    const tm = !!city.cfg.topMin; $('topRight').classList.toggle('min', tm); $('topMin').setAttribute('aria-expanded', String(!tm)); $('topMin').title = tm ? 'Show all controls' : 'Collapse controls'; $('topMin').setAttribute('aria-label', $('topMin').title);
     $('toolbar').hidden = !!game.readOnly; $('options').hidden = !!game.readOnly; $('roBanner').hidden = !game.readOnly;
     renderOptions(force);
   }
@@ -325,6 +333,7 @@ export function makeUI(game) {
     $('tier').textContent = TIERS[tier][0];
     $('tierbar').style.width = next ? `${Math.min(100, ((stats.pop - TIERS[tier][1]) / (next[1] - TIERS[tier][1])) * 100)}%` : '100%';
     $('tiernext').textContent = next ? `${fmt(next[1] - stats.pop)} to ${next[0]}` : 'Top tier reached';
+    $('tierbar').parentElement.title = $('tiernext').textContent;
     if (tier > lastTier) toast(`San Francisco is now a ${TIERS[tier][0]}`, 'gold');
     lastTier = tier;
     for (const el of document.querySelectorAll('.dbar')) {

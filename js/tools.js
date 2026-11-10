@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { MAP, heightAt, raycastGround, coastDist } from './terrain.js';
 import { CELL, GX, GZ, zone, road, bid, land, buildings, removeBuilding, refreshOverlay, ZONES, toI, toJ, inGrid, state as W } from './world.js';
-import { ROAD_TYPES, previewGeometry, cumLen } from './roads.js';
+import { ROAD_TYPES, previewGeometry, cumLen, nearestOn } from './roads.js';
 import { clamp } from './util.js';
 import { CAT } from './structures.js';
 import { dimsOf, siteOf, checkPlace, place, smartFill, terraform, pier, costOf } from './place.js';
@@ -17,7 +17,7 @@ export function makeTools(game) {
   const { canvas, camera, rig, roads, undo, scene, terrainU } = game;
   const T = {
     tool: 'inspect', roadType: 'street', roadMode: 'straight', zoneId: 1, zoneMode: 'brush', brush: 3,
-    snapGrid: true, snapAngle: true, blockW: 96, blockH: 176, scroll: 'auto', chain: null, ctrl: null, selected: null, hover: null,
+    snapGrid: true, snapAngle: true, blockW: 96, blockH: 176, blocksX: 3, blocksZ: 3, stampRot: 0, clip: null, scroll: 'auto', chain: null, ctrl: null, selected: null, hover: null,
     buildCat: 'park', buildKey: 'park', buildRot: 2, fill: { items: { tree: true, bench: true, lamp: true, planter: false, fountain: false, plaza: false }, density: 0.5, prompt: '' },
     lineType: 'bus', lineDraft: null, terraMode: 'raise', terraSize: 90, lockMode: 'lock', disaster: 'fire', quakeMag: 6.5, circuitMode: 'prebuilt', circuitDraft: null, hoodId: 0, hoodSize: 160,
   };
@@ -65,10 +65,57 @@ export function makeTools(game) {
   }
 
   // ---- snapping ----------------------------------------------------------------------------------
+  const _pv = new THREE.Vector3(), r1 = (v) => Math.round(v * 10) / 10;
+  function scr(x, z) { _pv.set(x, Math.max(heightAt(x, z), 0), z).project(camera); return [((_pv.x + 1) / 2) * canvas.clientWidth, ((1 - _pv.y) / 2) * canvas.clientHeight]; }
+  // Nearest road end or road under the cursor, measured in screen pixels so that it works the same in every
+  // direction however the camera is tilted.
+  function snapRoad(p) {
+    const RW = clamp(rig.dist * 0.07, 24, 220), [px, py] = scr(p.x, p.z); let best = null;
+    for (const id of roads.near(p.x - RW, p.z - RW, p.x + RW, p.z + RW)) {
+      const seg = roads.segs.get(id), q = seg.pts, Tt = ROAD_TYPES[seg.type];
+      for (const e of [0, q.length - 2]) {
+        const [sx, sy] = scr(q[e], q[e + 1]), d = Math.hypot(sx - px, sy - py), wd = Math.hypot(q[e] - p.x, q[e + 1] - p.z);
+        if ((d < 20 || wd < 7) && (!best || d - 12 < best.d)) best = { x: q[e], z: q[e + 1], d: d - 12, on: 'node', seg };
+      }
+      const n = nearestOn(q, seg.cum, p.x, p.z), [sx, sy] = scr(n.x, n.z), d = Math.hypot(sx - px, sy - py);
+      if ((d < 15 || n.d < Tt.half + Tt.walk + 2) && (!best || d < best.d)) best = { x: r1(n.x), z: r1(n.z), d, on: 'road', seg, dx: n.dx, dz: n.dz };
+    }
+    return best;
+  }
+  // where the ray from a point in a direction first meets a given road, as a distance along the ray
+  function rayHit(fx, fz, dx, dz, q) {
+    let bt = Infinity;
+    for (let k = 0; k + 3 < q.length; k += 2) {
+      const ax = q[k], az = q[k + 1], sx = q[k + 2] - ax, sz = q[k + 3] - az, den = dx * sz - dz * sx; if (Math.abs(den) < 1e-9) continue;
+      const t = ((ax - fx) * sz - (az - fz) * sx) / den, u = ((ax - fx) * dz - (az - fz) * dx) / den;
+      if (t > 0 && u >= -0.001 && u <= 1.001 && t < bt) bt = t;
+    }
+    return bt;
+  }
+  // a road that stops just short of another one, or runs just past it, ends on it instead
+  function extendTo(from, to) {
+    const L = Math.hypot(to.x - from.x, to.z - from.z); if (L < 8) return null;
+    const dx = (to.x - from.x) / L, dz = (to.z - from.z) / L, E = Math.min(clamp(rig.dist * 0.035, 12, 60), L * 0.5), ex = to.x + dx * E, ez = to.z + dz * E; let bt = Infinity;
+    for (const id of roads.near(Math.min(from.x, ex) - 2, Math.min(from.z, ez) - 2, Math.max(from.x, ex) + 2, Math.max(from.z, ez) + 2)) {
+      const q = roads.segs.get(id).pts;
+      for (let k = 0; k + 3 < q.length; k += 2) {
+        const ax = q[k], az = q[k + 1], sx = q[k + 2] - ax, sz = q[k + 3] - az, den = dx * sz - dz * sx; if (Math.abs(den) < 1e-9) continue;
+        const t = ((ax - from.x) * sz - (az - from.z) * sx) / den, u = ((ax - from.x) * dz - (az - from.z) * dx) / den;
+        if (u >= 0 && u <= 1 && t > Math.max(6, L - E) && t < L + E && Math.abs(t - L) < Math.abs(bt - L)) bt = t;
+      }
+    }
+    return bt < Infinity ? { x: r1(from.x + dx * bt), z: r1(from.z + dz * bt), on: 'road' } : null;
+  }
   function snap(p, from) {
-    const R = clamp(rig.dist * 0.014, 7, 34);
-    const n = roads.nearestNode(p.x, p.z, R); if (n) return { x: n.x, z: n.z, on: 'node' };
-    const s = roads.nearestSeg(p.x, p.z, R * 0.75); if (s) return { x: Math.round(s.x * 10) / 10, z: Math.round(s.z * 10) / 10, on: 'road' };
+    const hit = snapRoad(p);
+    if (hit) {
+      // landing on a road: slide along it to keep a clean angle when one is close
+      if (hit.on === 'road' && from && T.snapAngle) {
+        const a = Math.atan2(hit.z - from.z, hit.x - from.x), step = Math.PI / 12, sa = Math.round(a / step) * step, len = Math.hypot(hit.x - from.x, hit.z - from.z);
+        if (Math.abs(a - sa) < 0.12 && len > 10) { const t = rayHit(from.x, from.z, Math.cos(sa), Math.sin(sa), hit.seg.pts); if (t < Infinity) { const qx = from.x + Math.cos(sa) * t, qz = from.z + Math.sin(sa) * t; if (Math.hypot(qx - hit.x, qz - hit.z) < Math.max(10, len * 0.08)) return { ...hit, x: r1(qx), z: r1(qz) }; } }
+      }
+      return hit;
+    }
     let x = p.x, z = p.z;
     const Tt = ROAD_TYPES[T.roadType], offs = Tt.cells % 2 ? CELL / 2 : 0;
     if (T.snapGrid) { x = Math.round((x - offs) / CELL) * CELL + offs; z = Math.round((z - offs) / CELL) * CELL + offs; }
@@ -76,25 +123,49 @@ export function makeTools(game) {
       const dx = x - from.x, dz = z - from.z, len = Math.hypot(dx, dz), a = Math.atan2(dz, dx), step = Math.PI / 12, sa = Math.round(a / step) * step;
       if (len > 1 && Math.abs(a - sa) < 0.07) { const l = len * Math.cos(a - sa); x = from.x + Math.cos(sa) * l; z = from.z + Math.sin(sa) * l; }
     }
+    // grid snapping can leave the point a few metres off a road: weld it on
+    const w = roads.nearestSeg(x, z, 9); if (w) { const nd = roads.nearestNode(w.x, w.z, 7); return nd ? { x: nd.x, z: nd.z, on: 'node', seg: w.seg } : { x: r1(w.x), z: r1(w.z), on: 'road', seg: w.seg, dx: w.dx, dz: w.dz }; }
+    if (from) { const e = extendTo(from, { x, z }); if (e) return e; }
     return { x, z, on: null };
   }
   const bezier = (a, c, b) => { const len = Math.hypot(c.x - a.x, c.z - a.z) + Math.hypot(b.x - c.x, b.z - c.z), n = clamp(Math.ceil(len / 9), 6, 60), out = []; for (let i = 0; i <= n; i++) { const t = i / n, u = 1 - t; out.push(u * u * a.x + 2 * u * t * c.x + t * t * b.x, u * u * a.z + 2 * u * t * c.z + t * t * b.z); } return out; };
   const onLand = (x, z) => x > MAP.minX + 8 && x < MAP.maxX - 8 && z > MAP.minZ + 8 && z < MAP.maxZ - 8 && heightAt(x, z) >= 0.55;
 
-  // Street grid between two corners. Lines are trimmed back to land at the shore.
-  function gridLines(a, b) {
-    const sx = b.x >= a.x ? 1 : -1, sz = b.z >= a.z ? 1 : -1;
-    const nx = Math.max(1, Math.round(Math.abs(b.x - a.x) / T.blockW)), nz = Math.max(1, Math.round(Math.abs(b.z - a.z) / T.blockH));
-    const lines = [], x1 = a.x + sx * nx * T.blockW, z1 = a.z + sz * nz * T.blockH;
-    const trim = (ax, az, bx, bz) => {
-      const len = Math.hypot(bx - ax, bz - az), n = Math.ceil(len / 8); let i0 = 0, i1 = n;
-      const P = (i) => [ax + ((bx - ax) * i) / n, az + ((bz - az) * i) / n];
-      while (i0 < n && !onLand(...P(i0))) i0++; while (i1 > i0 && !onLand(...P(i1))) i1--;
-      if (i1 - i0 >= 2) lines.push([...P(i0), ...P(i1)]);
-    };
-    for (let k = 0; k <= nx; k++) trim(a.x + sx * k * T.blockW, a.z, a.x + sx * k * T.blockW, z1);
-    for (let k = 0; k <= nz; k++) trim(a.x, a.z + sz * k * T.blockH, x1, a.z + sz * k * T.blockH);
+  // ---- block stamps and copy / paste -------------------------------------------------------------------
+  const trimToLand = (ax, az, bx, bz, out) => {
+    const len = Math.hypot(bx - ax, bz - az), n = Math.max(2, Math.ceil(len / 8)); let i0 = 0, i1 = n;
+    const P = (i) => [ax + ((bx - ax) * i) / n, az + ((bz - az) * i) / n];
+    while (i0 < n && !onLand(...P(i0))) i0++; while (i1 > i0 && !onLand(...P(i1))) i1--;
+    if (i1 - i0 >= 2) out.push([...P(i0), ...P(i1)].map(r1));
+  };
+  // A grid of blocksX by blocksZ city blocks with its corner at the cursor. It lines up with the road under the
+  // cursor when there is one; T turns it a quarter each press.
+  function blockLines(h) {
+    const s = snap(h); let ang = 0;
+    if (s.seg) { const n = nearestOn(s.seg.pts, s.seg.cum, s.x, s.z); ang = Math.atan2(n.dz, n.dx); }
+    ang += (T.stampRot * Math.PI) / 2;
+    const ux = Math.cos(ang), uz = Math.sin(ang), vx = -uz, vz = ux, W2 = T.blocksX * T.blockW, H2 = T.blocksZ * T.blockH, lines = [];
+    for (let k = 0; k <= T.blocksX; k++) { const ox = s.x + ux * k * T.blockW, oz = s.z + uz * k * T.blockW; trimToLand(ox, oz, ox + vx * H2, oz + vz * H2, lines); }
+    for (let k = 0; k <= T.blocksZ; k++) { const ox = s.x + vx * k * T.blockH, oz = s.z + vz * k * T.blockH; trimToLand(ox, oz, ox + ux * W2, oz + uz * W2, lines); }
     return lines;
+  }
+  function copyRect(a, b) {
+    const x0 = Math.min(a.x, b.x), x1 = Math.max(a.x, b.x), z0 = Math.min(a.z, b.z), z1 = Math.max(a.z, b.z), cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, segs = [];
+    for (const id of roads.near(x0, z0, x1, z1)) {
+      const sg = roads.segs.get(id), bb = sg.bbox, mx = (bb[0] + bb[2]) / 2, mz = (bb[1] + bb[3]) / 2;
+      if (mx < x0 || mx > x1 || mz < z0 || mz > z1 || segs.length >= 500) continue;
+      segs.push({ type: sg.type, pts: Array.from(sg.pts, (v, k) => r1(v - (k & 1 ? cz : cx))) });
+    }
+    if (!segs.length) return game.ui.toast('No roads in that area to copy', 'warn');
+    T.clip = { segs }; T.stampRot = 0; game.ui.toast(`${segs.length} road piece${segs.length === 1 ? '' : 's'} copied. Click to paste, T turns it.`);
+  }
+  function clipLines(h) {
+    const off = CELL / 2, x = T.snapGrid ? Math.round((h.x - off) / CELL) * CELL + off : h.x, z = T.snapGrid ? Math.round((h.z - off) / CELL) * CELL + off : h.z, c = [1, 0, -1, 0][T.stampRot & 3], sn = [0, 1, 0, -1][T.stampRot & 3];
+    return T.clip.segs.map((sg) => ({ type: sg.type, pts: sg.pts.map((v, k, p) => (k & 1 ? r1(z + p[k - 1] * sn + v * c) : r1(x + v * c - p[k + 1] * sn))) }));
+  }
+  function stampRoads(list, label) { // list: [{type, pts}]
+    undo.begin(label); let n = 0; for (const l of list) if (roads.add(l.type, l.pts).ok) n++; undo.commit();
+    if (!n) game.ui.toast('No room for that here', 'warn'); return n;
   }
 
   function commitRoad(pts) {
@@ -108,9 +179,10 @@ export function makeTools(game) {
     clearPreview();
     const h = T.hover; if (T.tool !== 'road' || !h) return;
     const Tt = ROAD_TYPES[T.roadType], half = Tt.half + Tt.walk;
-    if (T.roadMode === 'grid') {
-      if (drag && drag.mode === 'grid') for (const l of gridLines(drag.a, snap(h))) addPreview(l, half);
-      else { const s = snap(h); addPreview([s.x - 3, s.z, s.x + 3, s.z], 3, onLand(s.x, s.z)); }
+    if (T.roadMode === 'blocks') { for (const l of blockLines(h)) addPreview(l, half); return; }
+    if (T.roadMode === 'copy') {
+      if (T.clip) for (const l of clipLines(h)) { const t2 = ROAD_TYPES[l.type]; addPreview(l.pts, t2.half + t2.walk, onLand(l.pts[0], l.pts[1]) && onLand(l.pts[l.pts.length - 2], l.pts[l.pts.length - 1])); }
+      else if (drag && drag.mode === 'crect' && drag.moved) { terrainU.uPrevCol.value.set('#e9d9a8'); terrainU.uRect.value.set(Math.min(drag.a.x, h.x), Math.min(drag.a.z, h.z), Math.max(drag.a.x, h.x), Math.max(drag.a.z, h.z)); terrainU.uRectOn.value = 1; }
       return;
     }
     if (!T.chain) { const s = snap(h); addPreview([s.x - 2, s.z, s.x + 2, s.z], half, onLand(s.x, s.z)); return; }
@@ -121,6 +193,8 @@ export function makeTools(game) {
     addPreview(pts, half, !roads.validate(pts));
   }
   function roadClick(g) {
+    if (T.roadMode === 'blocks') { stampRoads(blockLines(g).map((pts) => ({ type: T.roadType, pts })), 'road blocks'); return; }
+    if (T.roadMode === 'copy') { if (T.clip) stampRoads(clipLines(g), 'paste roads'); return; }
     if (T.roadMode === 'straight') {
       if (!T.chain) { const s = snap(g); if (!onLand(s.x, s.z)) return game.ui.toast('Roads must start and end on land', 'warn'); T.chain = s; return; }
       const s = snap(g, T.chain);
@@ -297,7 +371,7 @@ export function makeTools(game) {
     if (e.button === 2) drag = { ...base, mode: 'rotate' };
     else if (e.button === 1 || (e.button === 0 && (keys.has('Space') || T.tool === 'inspect'))) drag = { ...base, mode: 'pan', p: planeAt(e.clientX, e.clientY, rig.target.y), click: e.button === 0 && !keys.has('Space') };
     else if (e.button === 0 && g) {
-      if (T.tool === 'road') drag = T.roadMode === 'grid' ? { ...base, mode: 'grid', a: snap(g) } : { ...base, mode: 'click' };
+      if (T.tool === 'road') drag = T.roadMode === 'copy' && !T.clip ? { ...base, mode: 'crect', a: g } : { ...base, mode: 'click' };
       else if (T.tool === 'zone') {
         if (T.zoneMode === 'brush') { undo.begin('zone'); paintDisc(g.x, g.z, T.zoneId); drag = { ...base, mode: 'brush', last: g }; }
         else if (T.zoneMode === 'rect') drag = { ...base, mode: 'zrect', a: g };
@@ -342,7 +416,7 @@ export function makeTools(game) {
     if (d.mode === 'brush') undo.commit();
     else if (d.mode === 'rotate') { if (!d.moved && T.tool === 'road') { T.chain = null; T.ctrl = null; } }
     else if (d.mode === 'pan') { if (!d.moved && d.click) { T.selected = pickBuilding(e.clientX, e.clientY); game.ui.showInfo(T.selected); } }
-    else if (d.mode === 'grid') { if (g) { const lines = gridLines(d.a, snap(g)); undo.begin('road grid'); let n = 0; for (const l of lines) if (roads.add(T.roadType, l).ok) n++; undo.commit(); if (!n) game.ui.toast('No room for a grid here', 'warn'); } }
+    else if (d.mode === 'crect') { if (g && d.moved) copyRect(d.a, g); }
     else if (d.mode === 'zrect') { if (g) { undo.begin('zone'); paintRect(d.a, g, T.zoneId); undo.commit(); } }
     else if (d.mode === 'brect') { if (d.moved && g && Math.hypot(g.x - d.a.x, g.z - d.a.z) > 6) bulldozeRect(d.a, g); else bulldozeAt(e.clientX, e.clientY, g); }
     else if (d.mode === 'srect') { if (g && d.moved) buildRect(d.a, g); }
@@ -385,9 +459,10 @@ export function makeTools(game) {
     if (mod) return;
     keys.add(e.code);
     if (e.code === 'Space') e.preventDefault();
-    if (e.code === 'Escape') { if (T.chain) { T.chain = null; T.ctrl = null; } else if (T.lineDraft || T.circuitDraft) { T.lineDraft = null; T.circuitDraft = null; } else if (T.selected) { T.selected = null; game.ui.showInfo(null); } else api.setTool('inspect'); hoverDirty = true; }
+    if (e.code === 'Escape') { if (T.chain) { T.chain = null; T.ctrl = null; } else if (T.tool === 'road' && T.roadMode === 'copy' && T.clip) { T.clip = null; game.ui.refresh(true); } else if (T.lineDraft || T.circuitDraft) { T.lineDraft = null; T.circuitDraft = null; } else if (T.selected) { T.selected = null; game.ui.showInfo(null); } else api.setTool('inspect'); hoverDirty = true; }
     const tool = { Digit1: 'inspect', Digit2: 'road', Digit3: 'zone', Digit4: 'bulldoze', Digit5: 'build', Digit6: 'transit', Digit7: 'terrain' }[e.code]; if (tool) api.setTool(tool);
     if (e.code === 'KeyT' && T.tool === 'build') { T.buildRot = (T.buildRot + 1) & 3; hoverDirty = true; }
+    if (e.code === 'KeyT' && T.tool === 'road' && (T.roadMode === 'blocks' || T.roadMode === 'copy')) { T.stampRot = (T.stampRot + 1) & 3; hoverDirty = true; }
     if (e.code === 'Enter') api.finish();
     if (e.code === 'KeyH') game.ui.toggleHud && game.ui.toggleHud();
     if (e.code === 'KeyP') game.setSpeed(game.speed ? 0 : game.lastSpeed || 1);

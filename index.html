@@ -21,20 +21,9 @@
 
 <div id="hud" class="hud" hidden>
   <header class="top">
-    <section class="panel city" aria-label="City">
-      <div class="city-row"><span class="city-name" id="cityName">San Francisco</span><span class="tier" id="tier">Rural</span></div>
-      <div class="pop-row"><span class="num" id="pop">0</span><span class="lbl">residents</span><span class="sep"></span><span class="num sm" id="jobs">0</span><span class="lbl">jobs</span></div>
-      <div class="tierbar" role="progressbar" aria-label="Progress to next tier"><i id="tierbar"></i></div>
-      <div class="tiernext" id="tiernext">1,000 to Hamlet</div>
-      <div class="chips"><span class="chip" id="satChip" title="Satisfaction"><i data-lucide="smile"></i><b id="sat">60%</b></span><span class="chip" id="cashChip" title="Treasury" hidden><i data-lucide="landmark"></i><b id="cash">$0</b></span><span class="chip" id="waveChip" title="Economy" hidden><i data-lucide="trending-up"></i><b id="wave"></b></span></div>
-    </section>
-    <section class="panel demand" aria-label="Demand">
-      <div class="dbar" data-k="R"><div class="track"><i></i></div><span>R</span></div>
-      <div class="dbar" data-k="C"><div class="track"><i></i></div><span>C</span></div>
-      <div class="dbar" data-k="O"><div class="track"><i></i></div><span>O</span></div>
-      <div class="dbar" data-k="I"><div class="track"><i></i></div><span>I</span></div>
-    </section>
-    <div class="spacer"></div>
+    <div class="top-left"></div>
+    <button class="panel ticker" id="ticker" hidden title="Open the citizen feed"><span class="who" id="tickWho"></span><span class="what" id="tickText"></span></button>
+    <div class="top-right" id="topRight">
     <section class="panel clock" aria-label="Time">
       <div class="when"><span id="day">Winter 2025</span><span class="num" id="time">10:00</span></div>
       <div class="seg speed" role="group" aria-label="Speed">
@@ -47,6 +36,7 @@
       <button class="icon" id="wxBtn" data-pop="wxPop" aria-label="Weather" title="Weather" aria-expanded="false"><i data-lucide="cloud-fog"></i></button>
       <button class="icon" id="ovBtn" data-pop="ovPop" aria-label="Overlays" title="Overlays" aria-expanded="false"><i data-lucide="layers"></i></button>
       <button class="icon" id="soundBtn" aria-label="Sound" title="Sound" aria-pressed="true"><i data-lucide="volume-2"></i></button>
+      <button class="icon" id="topMin" aria-label="Collapse controls" title="Collapse controls" aria-expanded="true"><i data-lucide="chevrons-right"></i></button>
       <div class="pop-over" id="sunPop" hidden>
         <label for="hour">Time of day <span class="num" id="hourLbl">10:00</span></label>
         <input type="range" id="hour" min="0" max="24" step="0.25" value="10" />
@@ -65,6 +55,7 @@
     </section>
     <button class="panel icon menu-btn" id="cityBtn" aria-label="City panel" title="City panel (C)"><i data-lucide="chart-no-axes-column"></i></button>
     <button class="panel icon menu-btn" id="menuBtn" aria-label="Menu" title="Menu"><i data-lucide="menu"></i></button>
+    </div>
   </header>
 
   <aside class="panel info" id="info" hidden aria-live="polite"></aside>
@@ -76,13 +67,27 @@
   <div class="panel legend" id="legend" hidden></div>
   <div class="left-stack">
     <div class="panel tip" id="tip" hidden><p id="tipText"></p><div class="row"><button class="btn sm" id="tipOk">Got it</button><button class="btn sm ghost" id="tipOff">Turn tips off</button></div></div>
-    <button class="panel ticker" id="ticker" hidden title="Open the citizen feed"><span class="who" id="tickWho"></span><span class="what" id="tickText"></span></button>
   </div>
   <div class="banner panel" id="roBanner" hidden><span id="roText">Read-only view of a shared city.</span><a class="btn sm primary" id="roOwn" href="./">Build your own</a></div>
 
   <footer class="bottom">
     <div class="panel options" id="options"></div>
-    <nav class="panel toolbar" id="toolbar" aria-label="Tools">
+    <div class="panel dock" id="dock">
+    <section class="city" aria-label="City">
+      <div class="city-row"><span class="city-name" id="cityName">San Francisco</span><span class="tier" id="tier">Rural</span></div>
+      <div class="pop-row"><span class="num" id="pop">0</span><span class="lbl">residents</span><span class="sep"></span><span class="num sm" id="jobs">0</span><span class="lbl">jobs</span></div>
+      <div class="tierbar" role="progressbar" aria-label="Progress to next tier"><i id="tierbar"></i></div>
+      <div class="tiernext" id="tiernext">1,000 to Hamlet</div>
+      <div class="chips"><span class="chip" id="satChip" title="Satisfaction"><i data-lucide="smile"></i><b id="sat">60%</b></span><span class="chip" id="cashChip" title="Treasury" hidden><i data-lucide="landmark"></i><b id="cash">$0</b></span><span class="chip" id="waveChip" title="Economy" hidden><i data-lucide="trending-up"></i><b id="wave"></b></span></div>
+    </section>
+    <section class="demand" aria-label="Demand">
+      <div class="dbar" data-k="R"><div class="track"><i></i></div><span>R</span></div>
+      <div class="dbar" data-k="C"><div class="track"><i></i></div><span>C</span></div>
+      <div class="dbar" data-k="O"><div class="track"><i></i></div><span>O</span></div>
+      <div class="dbar" data-k="I"><div class="track"><i></i></div><span>I</span></div>
+    </section>
+    <span class="divider stat-div"></span>
+    <nav class="toolbar" id="toolbar" aria-label="Tools">
       <button data-tool="inspect" title="Inspect (1)"><i data-lucide="mouse-pointer-2"></i><span>Inspect</span></button>
       <button data-tool="road" title="Roads (2)"><i data-lucide="route"></i><span>Roads</span></button>
       <button data-tool="zone" title="Zones (3)"><i data-lucide="grid-2x2"></i><span>Zones</span></button>
@@ -94,6 +99,7 @@
       <button id="undoBtn" title="Undo (Cmd+Z)" aria-label="Undo"><i data-lucide="undo-2"></i><span>Undo</span></button>
       <button id="redoBtn" title="Redo (Shift+Cmd+Z)" aria-label="Redo"><i data-lucide="redo-2"></i><span>Redo</span></button>
     </nav>
+    </div>
   </footer>
   <pre class="debug" id="debug" aria-hidden="true"></pre>
 </div>
