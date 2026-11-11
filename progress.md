@@ -85,3 +85,4 @@ Verified in the browser: audio level with an analyser (ambience about 0.02 RMS, 
 - Cars on screen follow the modelled volumes, stop at red lights and stop signs, queue behind the stop line.
 - UI: road details panel (click a road in Inspect), Upgrade mode in Roads, Traffic section in City panel Economy tab with busiest roads, traffic overlay as colored ribbons per direction, jam posts and tip.
 - Verified locally: presets run 0.1 to 0.5 ms a frame for the model, max road load 11 to 28 percent in presets, a 14x stress load produced jams over 100 percent, save/load keeps junction overrides, undo restores road type.
+- Nov 10: Historic locks and Disasters moved into a More menu in the bottom toolbar. Inspect, Bulldoze and Lock no longer show a hint bar; the options bar only appears for tools with settings. Lock and Unlock show a one-line toast and the More button reads Locking or Unlocking while active.

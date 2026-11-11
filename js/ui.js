@@ -41,9 +41,7 @@ export function makeUI(game) {
     if (key === optKey && !force) return; optKey = key;
     const el = $('options'); let h = '';
     if (game.readOnly) h = '<span class="hint">Shared city. Look around: drag to move, right-drag to rotate, scroll or pinch to zoom. Click a building for details.</span>';
-    else if (t.tool === 'inspect') h = '<span class="hint">Click a building for details. Drag to move, right-drag to rotate, scroll or pinch to zoom.</span><div class="grp"><button class="btn sm" data-act="tool" data-v="lock">Historic locks</button></div>';
-    else if (t.tool === 'bulldoze') h = '<span class="hint">Click a building or a road to remove it. Drag to clear an area.</span>';
-    else if (t.tool === 'lock') h = `<div class="grp">${seg('lockMode', t.lockMode, [['lock', 'Lock'], ['unlock', 'Unlock']])}</div><span class="hint">Click a building, or drag an area. Locked buildings are never redeveloped.</span>`;
+    else if (t.tool === 'inspect' || t.tool === 'bulldoze' || t.tool === 'lock') h = '';
     else if (t.tool === 'disaster') h = `<span class="hint">Click a building to set it alight. Fire stations in range put fires out.</span><div class="grp"><span>Magnitude <b id="magLbl">${t.quakeMag.toFixed(1)}</b></span><input type="range" id="quakeMag" min="5" max="8.2" step="0.1" value="${t.quakeMag}" aria-label="Earthquake magnitude" /><button class="btn sm danger" data-act="quake">Trigger earthquake</button></div>`;
     else if (t.tool === 'hood') h = `<span class="hint">Painting ${esc(hoodName(t.hoodId))}. Drag over the blocks that belong to it.</span><div class="grp"><span>Size</span><input type="range" id="hoodSize" min="80" max="600" step="20" value="${t.hoodSize}" aria-label="Brush size" /><button class="btn sm" data-act="tool" data-v="inspect">Done</button></div>`;
     else if (t.tool === 'road') {
@@ -85,7 +83,7 @@ export function makeUI(game) {
       h = `<div class="grp">${seg('terraMode', t.terraMode, [['raise', 'Raise'], ['lower', 'Lower'], ['flatten', 'Flatten'], ['fill', 'Landfill', 'Turn shallow water into land'], ['dig', 'Dig', 'Turn land into water'], ['pier', 'Pier', 'Drag a straight strip of new land']])}</div>
         <div class="grp"><span>Size</span><input type="range" id="terraSize" min="40" max="320" step="10" value="${t.terraSize}" aria-label="Brush size" /></div><span class="hint">${t.terraMode === 'pier' ? 'Drag from the shore out into the water.' : 'Hold and drag. Roads and buildings stay put.'}</span>`;
     }
-    el.innerHTML = h;
+    el.innerHTML = h; el.hidden = !h;
   }
   $('options').addEventListener('click', (e) => {
     const b = e.target.closest('[data-act]'); if (!b || b.tagName === 'INPUT') return;
@@ -139,6 +137,24 @@ export function makeUI(game) {
   document.querySelectorAll('.toolbar [data-tool]').forEach((b) => b.addEventListener('click', () => game.tools.setTool(b.dataset.tool)));
   $('undoBtn').addEventListener('click', () => game.doUndo(false)); $('redoBtn').addEventListener('click', () => game.doUndo(true));
   document.querySelectorAll('.speed [data-speed]').forEach((b) => b.addEventListener('click', () => game.setSpeed(+b.dataset.speed)));
+  // ---- More: secondary tools in the bottom toolbar ----
+  const MORE = { lock: ['lock', 'lock', 'Locking', 'Click a building or drag an area to lock it. Esc to stop.'], unlock: ['lock', 'unlock', 'Unlocking', 'Click a building or drag an area to unlock it. Esc to stop.'], disaster: ['disaster', null, 'Disasters', ''] };
+  function moreOpen(on) {
+    const p = $('morePop'), b = $('moreBtn'); p.hidden = !on; b.setAttribute('aria-expanded', String(on));
+    if (on) { const r = b.getBoundingClientRect(), w = p.offsetWidth || 240; p.style.left = `${Math.max(8, Math.min(innerWidth - w - 8, r.left + r.width / 2 - w / 2))}px`; p.style.bottom = `${innerHeight - r.top + 8}px`; }
+  }
+  $('moreBtn').addEventListener('click', (e) => { e.stopPropagation(); moreOpen($('morePop').hidden); });
+  $('morePop').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-more]'); if (!b) return; const [tool, mode, , hint] = MORE[b.dataset.more];
+    if (mode) T().lockMode = mode; game.tools.setTool(tool); moreOpen(false); if (hint) toast(hint); refresh(true);
+  });
+  document.addEventListener('pointerdown', (e) => { if (!$('morePop').hidden && !e.target.closest('#morePop, #moreBtn')) moreOpen(false); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('morePop').hidden) moreOpen(false); });
+  function syncMore() {
+    const t = T(), k = t.tool === 'lock' ? t.lockMode : t.tool === 'disaster' ? 'disaster' : null, b = $('moreBtn');
+    b.setAttribute('aria-pressed', String(!!k)); $('moreLbl').textContent = k ? MORE[k][2] : 'More';
+    document.querySelectorAll('#morePop [data-more]').forEach((x) => x.setAttribute('aria-current', String(x.dataset.more === k)));
+  }
   const POPS = ['sunPop', 'wxPop', 'ovPop'];
   document.querySelectorAll('[data-pop]').forEach((b) => b.addEventListener('click', () => { const id = b.dataset.pop, open = $(id).hidden; for (const p of POPS) { $(p).hidden = true; } document.querySelectorAll('[data-pop]').forEach((q) => q.setAttribute('aria-expanded', 'false')); if (open) { $(id).hidden = false; b.setAttribute('aria-expanded', 'true'); syncPops(); } placeInfo(); }));
   $('hour').addEventListener('input', (e) => { game.setHour(+e.target.value); $('hourLbl').textContent = hhmm(game.viewHour()); });
@@ -173,13 +189,14 @@ export function makeUI(game) {
     document.querySelectorAll('.toolbar [data-tool]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.tool === t.tool)));
     document.querySelectorAll('.speed [data-speed]').forEach((b) => b.setAttribute('aria-pressed', String(+b.dataset.speed === game.speed)));
     $('undoBtn').disabled = !game.undo.canUndo(); $('redoBtn').disabled = !game.undo.canRedo();
+    syncMore();
     const segs = { growthSeg: sim.growth, scrollSeg: t.scroll, gfxSeg: city.cfg.gfx, camSeg: game.camMode, uiSeg: city.cfg.ui, trafficSeg: city.cfg.traffic, moneySeg: city.cfg.money };
     for (const id in segs) document.querySelectorAll(`#${id} button`).forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === String(segs[id]))));
     $('landValue').checked = city.cfg.landValue; $('tipsOn').checked = city.cfg.tips; $('parody').checked = city.cfg.parody; $('parody').disabled = !!game.readOnly;
     $('cashChip').hidden = city.cfg.money !== 'budget';
     const hud = $('hud'); hud.classList.toggle('ui-side', city.cfg.ui === 'side'); hud.classList.toggle('ui-ro', !!game.readOnly);
     const tm = !!city.cfg.topMin; $('topRight').classList.toggle('min', tm); $('topMin').setAttribute('aria-expanded', String(!tm)); $('topMin').title = tm ? 'Show all controls' : 'Collapse controls'; $('topMin').setAttribute('aria-label', $('topMin').title);
-    $('toolbar').hidden = !!game.readOnly; $('options').hidden = !!game.readOnly; $('roBanner').hidden = !game.readOnly;
+    $('toolbar').hidden = !!game.readOnly; $('options').hidden = !$('options').innerHTML; $('roBanner').hidden = !game.readOnly;
     renderOptions(force);
   }
 

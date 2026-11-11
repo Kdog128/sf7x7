@@ -74,6 +74,11 @@
 
   <footer class="bottom">
     <div class="panel options" id="options"></div>
+    <div class="panel more-pop" id="morePop" role="menu" aria-label="More tools" hidden>
+      <button role="menuitem" data-more="lock"><i data-lucide="lock"></i><span>Lock buildings<em>Locked buildings are never redeveloped</em></span></button>
+      <button role="menuitem" data-more="unlock"><i data-lucide="lock-open"></i><span>Unlock buildings</span></button>
+      <button role="menuitem" data-more="disaster"><i data-lucide="flame"></i><span>Disasters<em>Fires and earthquakes</em></span></button>
+    </div>
     <div class="panel dock" id="dock">
     <section class="city" aria-label="City">
       <div class="city-row"><span class="city-name" id="cityName">San Francisco</span><span class="tier" id="tier">Rural</span></div>
@@ -97,6 +102,7 @@
       <button data-tool="transit" title="Transit (6)"><i data-lucide="tram-front"></i><span>Transit</span></button>
       <button data-tool="terrain" title="Terrain (7)"><i data-lucide="mountain"></i><span>Terrain</span></button>
       <button data-tool="bulldoze" title="Bulldoze (4)"><i data-lucide="shovel"></i><span>Bulldoze</span></button>
+      <button id="moreBtn" aria-haspopup="menu" aria-expanded="false" aria-controls="morePop" title="More tools"><i data-lucide="ellipsis"></i><span id="moreLbl">More</span></button>
       <span class="divider"></span>
       <button id="undoBtn" title="Undo (Cmd+Z)" aria-label="Undo"><i data-lucide="undo-2"></i><span>Undo</span></button>
       <button id="redoBtn" title="Redo (Shift+Cmd+Z)" aria-label="Redo"><i data-lucide="redo-2"></i><span>Redo</span></button>
