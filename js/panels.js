@@ -27,6 +27,12 @@ export function makePanels(game, { $, esc, toast, icons, refresh }) {
     const b = city.breakdown, budget = city.cfg.money === 'budget', ro = game.readOnly ? 'disabled' : '';
     let h = `<h3>Budget</h3>${budget ? row('Treasury', money(city.treasury), city.treasury < 0 ? 'bad' : '') : '<p class="note">Money is unlimited. Switch to Budget in Menu, More settings.</p>'}${row('Income a day', money(city.income))}${row('Spending a day', money(city.expense))}${row('Average rent', '$' + fmt(city.rent))}${row('Visitors index', Math.round(city.tourism))}`;
     if (b.inc) h += `<details><summary>Breakdown</summary>${Object.entries(b.inc).map(([k, v]) => row(k, money(v))).join('')}${Object.entries(b.exp).map(([k, v]) => row(k, '-' + money(v))).join('')}</details>`;
+    const TS = game.traffic && game.traffic.stats;
+    if (TS && city.cfg.traffic === 'sim' && game.roads.segs.size) {
+      h += `<h3>Traffic</h3>${TS.ready ? row('Average commute', `${Math.round(TS.commute)} min`, TS.commute > 30 ? 'bad' : '') + row('Congestion', `${Math.round(TS.congestion * 100)}%`, TS.congestion > 0.8 ? 'bad' : '') : '<p class="note">Counting trips.</p>'}${row('Traffic lights', fmt(TS.signals))}${row('Stop signs', fmt(TS.stops))}`;
+      if (TS.isolated) h += `<p class="note">${fmt(TS.isolated)} block${TS.isolated > 1 ? 's' : ''} of homes have no road out.</p>`;
+      if (TS.ready && TS.jams.length) h += `<details><summary>Busiest roads</summary>${TS.jams.slice(0, 6).map((j) => { const I = game.traffic.segInfo(j.sid); return I ? `<div class="kv"><span>${esc(I.label)}</span><b>${Math.round(j.x * 100)}% <button class="link" data-a="goroad" data-v="${j.sid}">Go</button></b></div>` : ''; }).join('')}<p class="note">Over 100% means cars queue. Wider roads, parallel routes and transit help.</p></details>`;
+    }
     h += `<h3>Taxes</h3>${[['R', 'Residential'], ['C', 'Commercial'], ['O', 'Office'], ['I', 'Industrial']].map(([k, n]) => slider('tax' + k, n, city.tax[k], 0, 20, 1, city.tax[k] + '%')).join('')}<p class="note">9% is neutral. Higher rates bring in more and slow that kind of growth. District rates are under Neighborhoods.</p>`;
     if (city.taxEvents.length) h += `<h3>This year</h3>${city.taxEvents.map((e) => `<p class="note"><b>${esc(e.name)}.</b> ${esc(e.text)}</p>`).join('')}`;
     h += `<h3>Subsidies</h3>${[['R', 'Housing'], ['C', 'Shops'], ['O', 'Offices'], ['I', 'Industry']].map(([k, n]) => `<label class="check"><input type="checkbox" data-sub="${k}" ${city.subsidy[k] ? 'checked' : ''} ${ro}/> ${n}</label>`).join('')}`;
@@ -125,6 +131,7 @@ export function makePanels(game, { $, esc, toast, icons, refresh }) {
   $('drawerBody').addEventListener('click', (e) => {
     const b = e.target.closest('[data-a]'); if (!b) return; const a = b.dataset.a, v = b.dataset.v, T = game.tools.state;
     if (a === 'hood') openHood = openHood === +v ? 0 : +v;
+    else if (a === 'goroad') { const sg = game.roads.segs.get(+v); if (sg) { fly((sg.pts[0] + sg.pts[2]) / 2, (sg.pts[1] + sg.pts[3]) / 2, 420); game.tools.setTool('inspect'); toggle(false); game.ui.showRoad(+v); } return; }
     else if (a === 'goarea') { const [x, z] = ll(...AREAS[+v].c); fly(x, z, 3200); }
     else if (a === 'openall') game.openAllAreas();
     else if (a === 'gohood') { const c = hoodCenters().find((q) => q.id === +v); if (c) fly(c.x, c.z, 2200); }

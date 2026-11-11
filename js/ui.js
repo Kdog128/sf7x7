@@ -47,12 +47,14 @@ export function makeUI(game) {
     else if (t.tool === 'disaster') h = `<span class="hint">Click a building to set it alight. Fire stations in range put fires out.</span><div class="grp"><span>Magnitude <b id="magLbl">${t.quakeMag.toFixed(1)}</b></span><input type="range" id="quakeMag" min="5" max="8.2" step="0.1" value="${t.quakeMag}" aria-label="Earthquake magnitude" /><button class="btn sm danger" data-act="quake">Trigger earthquake</button></div>`;
     else if (t.tool === 'hood') h = `<span class="hint">Painting ${esc(hoodName(t.hoodId))}. Drag over the blocks that belong to it.</span><div class="grp"><span>Size</span><input type="range" id="hoodSize" min="80" max="600" step="20" value="${t.hoodSize}" aria-label="Brush size" /><button class="btn sm" data-act="tool" data-v="inspect">Done</button></div>`;
     else if (t.tool === 'road') {
-      h = `<div class="grp">${seg('roadType', t.roadType, Object.entries(ROAD_TYPES).map(([k, r]) => [k, r.name, r.hint]))}</div>
-        <div class="grp">${seg('roadMode', t.roadMode, [['straight', 'Straight', 'Click to place points. Right-click or Esc ends the road.'], ['curve', 'Curve', 'Click start, bend point, then end.'], ['blocks', 'Blocks', 'Stamp a grid of city blocks with one click.'], ['copy', 'Copy', 'Drag over roads to copy them, then click to paste.']])}</div>`;
+      const RF = game.traffic.ROAD_FLOW, cap = (k) => { const f = RF[k]; return `${f.lanes} lane${f.lanes > 1 ? 's' : ''} ${f.oneway ? 'one way' : 'each way'}, ${f.mph} mph, about ${fmt(Math.round(f.lanes * f.cap / 50) * 50)} cars an hour${f.oneway ? '' : ' each way'}${f.free ? ', no lights' : ''}`; };
+      h = `<div class="grp">${seg('roadType', t.roadType, Object.entries(ROAD_TYPES).map(([k, r]) => [k, r.name, cap(k)]))}</div>
+        <div class="grp">${seg('roadMode', t.roadMode, [['straight', 'Straight', 'Click to place points. Right-click or Esc ends the road.'], ['curve', 'Curve', 'Click start, bend point, then end.'], ['blocks', 'Blocks', 'Stamp a grid of city blocks with one click.'], ['copy', 'Copy', 'Drag over roads to copy them, then click to paste.'], ['upgrade', 'Upgrade', 'Click a road to change it to the selected type']])}</div>`;
+      if (t.roadMode === 'upgrade') h += `<span class="hint">Click a road to make it ${ROAD_TYPES[t.roadType].name.toLowerCase()}. ${esc(cap(t.roadType))}. Wider roads clear buildings in the way.</span>`;
       const num = (id, v, min, max, step, label) => `<input type="number" id="${id}" min="${min}" max="${max}" step="${step}" value="${v}" aria-label="${label}" />`;
       if (t.roadMode === 'blocks') h += `<div class="grp">${num('blocksX', t.blocksX, 1, 12, 1, 'Blocks across')}<span>by</span>${num('blocksZ', t.blocksZ, 1, 12, 1, 'Blocks down')}<span>blocks of</span>${num('blockW', t.blockW, 48, 400, 8, 'Block width in metres')}<span>by</span>${num('blockH', t.blockH, 48, 400, 8, 'Block length in metres')}<span>m</span></div><div class="grp"><button class="btn sm" data-act="stampRot">Turn (T)</button></div><span class="hint">Click to stamp. It lines up with a road under the cursor.</span>`;
       else if (t.roadMode === 'copy') h += t.clip ? `<div class="grp"><button class="btn sm" data-act="stampRot">Turn (T)</button><button class="btn sm ghost" data-act="noclip">Copy something else</button></div><span class="hint">Click to paste ${t.clip.segs.length} road piece${t.clip.segs.length === 1 ? '' : 's'}.</span>` : '<span class="hint">Drag over the roads you want to copy.</span>';
-      if (t.roadMode !== 'copy' || t.clip) h += `<div class="grp"><label class="check"><input type="checkbox" data-act="snapGrid" ${t.snapGrid ? 'checked' : ''}/> Snap to grid</label>${t.roadMode === 'straight' ? `<label class="check"><input type="checkbox" data-act="snapAngle" ${t.snapAngle ? 'checked' : ''}/> Snap angles</label>` : ''}</div>`;
+      if (t.roadMode !== 'upgrade' && (t.roadMode !== 'copy' || t.clip)) h += `<div class="grp"><label class="check"><input type="checkbox" data-act="snapGrid" ${t.snapGrid ? 'checked' : ''}/> Snap to grid</label>${t.roadMode === 'straight' ? `<label class="check"><input type="checkbox" data-act="snapAngle" ${t.snapAngle ? 'checked' : ''}/> Snap angles</label>` : ''}</div>`;
     } else if (t.tool === 'zone') {
       const sw = (id) => `<button class="sw" data-act="zone" data-v="${id}" aria-pressed="${t.zoneId === id}" style="--c:${id ? ZONES[id].color : '#8d867a'}" title="${id ? `${ZONES[id].name}, ${ZONES[id].density.toLowerCase()}` : 'Remove zoning'}"><i></i>${id ? (ZONES[id].spec ? ZONES[id].name : `${ZONES[id].name} ${ZONES[id].density.toLowerCase()}`) : 'De-zone'}</button>`;
       h = `<div class="grp swatches">${[1, 3, 5, 7, 2, 4, 6, 8].map(sw).join('')}</div><div class="grp swatches two">${[11, 10, 9, 12].map(sw).join('')}</div><div class="grp">${sw(0)}</div>
@@ -183,8 +185,28 @@ export function makeUI(game) {
 
   // ---- info panel ---------------------------------------------------------------------------------
   const KIND = { park: 'Park and decor', service: 'City service', landmark: 'Landmark', night: 'Nightlife venue', sport: 'Sports venue' };
+  // ---- road details: lanes, capacity, how full it is, the junctions at each end ----
+  let roadId = 0, roadAcc = 0;
+  const pct = (x) => `${Math.round(x * 100)}%`, fullness = (x) => x < 0.5 ? 'Free flowing' : x < 0.8 ? 'Busy' : x < 1 ? 'Heavy' : x < 1.3 ? 'Jammed' : 'Gridlock';
+  function showRoad(id) {
+    const el = $('info'), TR = game.traffic, s = game.roads.segs.get(id); if (s && !TR.segInfo(id)) TR.update(0);
+    const I = s && TR.segInfo(id);
+    if (!s) { el.hidden = true; roadId = 0; T().roadSel = null; return; }
+    infoId = 0; roadId = id; T().roadSel = id; game.tools.touch();
+    const F = TR.ROAD_FLOW[s.type], rows = [['Lanes', `${F.lanes} ${F.oneway ? 'one way' : 'each way'}`], ['Speed limit', `${F.mph} mph`], ['Length', `${Math.round(s.len)} m`]];
+    let h = `<button class="icon close" aria-label="Close details"><i data-lucide="x"></i></button><h2>${esc(I ? I.label : ROAD_TYPES[s.type].name)}</h2><div class="kind"><span class="dot" style="background:#6d6a64"></span>Road</div>`;
+    if (I && TR.ready) {
+      rows.push(['Cars an hour', fmt(Math.round(I.vol))], ['Can carry', `${fmt(Math.round(I.dirs.reduce((m, d) => m + d.cap, 0)))} an hour`], ['How full', `${pct(I.worst)}, ${fullness(I.worst).toLowerCase()}`], ['Speed now', `${I.mph} mph`]);
+    } else rows.push(['Traffic', 'Counting cars']);
+    h += `<dl>${rows.map((r) => `<dt>${r[0]}</dt><dd>${r[1]}</dd>`).join('')}</dl>`;
+    if (I && TR.ready) h += `<div class="flowbar" role="img" aria-label="How full: ${pct(I.worst)}"><i style="width:${Math.min(100, I.worst * 77)}%;background:${I.worst < 0.5 ? '#5a965f' : I.worst < 0.8 ? '#cdaa50' : I.worst < 1 ? '#d07a3c' : '#aa3c32'}"></i></div>`;
+    if (I) for (const [k, e] of I.ends.entries()) if (e.deg >= 3 || (e.deg === 2 && e.ctrl !== 'free')) h += `<div class="sub junction"><b>${k ? 'End' : 'Start'} junction</b><span>${TR.CONTROL_NAMES[e.ctrl] || 'No control'}</span>${game.readOnly || e.ctrl === 'merge' ? '' : `<button class="btn sm ghost" data-act="jct" data-v="${e.key}">Change</button>`}</div>`;
+    if (!game.readOnly) h += `<div class="row retype">${['street', 'avenue', 'boulevard', 'oneway'].map((k) => `<button class="btn sm ${k === s.type ? '' : 'ghost'}" data-act="retype" data-v="${k}" ${k === s.type && k !== 'oneway' ? 'disabled' : ''} title="${k === s.type && k === 'oneway' ? 'Flip direction' : 'Change to ' + ROAD_TYPES[k].name.toLowerCase()}">${k === s.type && k === 'oneway' ? 'Flip' : ROAD_TYPES[k].name}</button>`).join('')}</div>`;
+    if (I && TR.ready && I.worst > 0.9) h += `<p class="note">${s.type === 'street' ? 'Upgrade to an avenue, add a parallel street or run a bus line here.' : s.type === 'avenue' ? 'A boulevard, a parallel avenue or a metro line would take the pressure off.' : 'Add a parallel route or a metro line. Fewer junctions also help.'}</p>`;
+    el.innerHTML = h; el.hidden = false; icons(); placeInfo();
+  }
   function showInfo(b) {
-    const el = $('info');
+    const el = $('info'); roadId = 0; if (T().roadSel) { T().roadSel = null; game.tools.touch(); }
     if (!b) { el.hidden = true; infoId = 0; return; }
     infoId = b.id; const [x, z] = bpos(b), hood = hoodName(hoodAt(x, z)), lv = Math.round(sample(grid.lv, x, z) * 100), sat = Math.round(sample(grid.sat, x, z) * 100), built = sim.year0 + Math.floor((b.born - 1) / 4);
     let h = '<button class="icon close" aria-label="Close details"><i data-lucide="x"></i></button>';
@@ -226,7 +248,13 @@ export function makeUI(game) {
   }
   $('info').addEventListener('click', (e) => {
     const b = buildings.get(infoId);
-    if (e.target.closest('.close')) { T().selected = null; showInfo(null); game.tools.touch(); }
+    if (e.target.closest('.close')) { T().selected = null; showInfo(null); game.tools.touch(); return; }
+    if (roadId) {
+      const rt = e.target.closest('[data-act="retype"]'), jc = e.target.closest('[data-act="jct"]');
+      if (rt) { const s = game.roads.segs.get(roadId), pts = s && s.pts.slice(); if (s && game.tools.retype(roadId, rt.dataset.v)) { const n = game.roads.nearestSeg((pts[0] + pts[2]) / 2, (pts[1] + pts[3]) / 2, 4); showRoad(n ? n.seg.id : 0); } }
+      if (jc) { const k = jc.dataset.v, cur = game.traffic.nodeCtrl(k), order = ['signal', 'stop', 'free'], nx = order[(order.indexOf(cur) + 1) % 3]; game.traffic.setControl(k, nx); game.traffic.update(0); markDirty(); toast(`Junction: ${game.traffic.CONTROL_NAMES[nx].toLowerCase()}`); showRoad(roadId); }
+      return;
+    }
     else if (e.target.closest('[data-act="lock"]') && b) { if (b.locked) delete b.locked; else b.locked = true; showInfo(b); }
     else if (e.target.closest('[data-act="turnB"]') && b) { const v = e.target.closest('[data-act="turnB"]').dataset.v, why = turnStructure(game, b, v === 'street' ? 'street' : +v); if (why) toast(why, 'warn'); else { const nb = buildings.get(b.id); T().selected = nb; showInfo(nb); game.tools.touch(); } }
     else if (e.target.closest('[data-act="demolish"]') && b) {
@@ -311,7 +339,7 @@ export function makeUI(game) {
 
   // ---- start screen ------------------------------------------------------------------------------------
   const q = new URLSearchParams(location.search), pick = (k, d, ok) => (ok.includes(q.get(k)) ? q.get(k) : d);
-  const S = { map: MAPMODE, areas: pick('areas', 'grow', ['grow', 'open']), night: pick('night', 'real', ['real', 'neon']), start: pick('start', 'empty', ['empty', 'grid', 'south', 'demo', ...PRESET_KEYS]), era: pick('era', 'today', Object.keys(ERAS)), money: pick('money', 'unlimited', ['unlimited', 'budget']), growth: pick('growth', '1', ['0.5', '1', '2']), traffic: pick('traffic', 'cosmetic', ['cosmetic', 'sim']), lv: pick('lv', 'on', ['on', 'off']), ui: pick('ui', 'bottom', ['bottom', 'side', 'hide']), cam: pick('cam', 'angled', ['angled', 'top', 'street']), gfx: pick('gfx', 'auto', ['low', 'medium', 'high', 'ultra', 'auto']), fog: pick('fog', 'on', ['on', 'off']), rain: pick('rain', 'on', ['on', 'off']), sunsets: pick('sunsets', 'on', ['on', 'off']) };
+  const S = { map: MAPMODE, areas: pick('areas', 'grow', ['grow', 'open']), night: pick('night', 'real', ['real', 'neon']), start: pick('start', 'empty', ['empty', 'grid', 'south', 'demo', ...PRESET_KEYS]), era: pick('era', 'today', Object.keys(ERAS)), money: pick('money', 'unlimited', ['unlimited', 'budget']), growth: pick('growth', '1', ['0.5', '1', '2']), traffic: pick('traffic', 'sim', ['sim', 'cosmetic']), lv: pick('lv', 'on', ['on', 'off']), ui: pick('ui', 'bottom', ['bottom', 'side', 'hide']), cam: pick('cam', 'angled', ['angled', 'top', 'street']), gfx: pick('gfx', 'auto', ['low', 'medium', 'high', 'ultra', 'auto']), fog: pick('fog', 'on', ['on', 'off']), rain: pick('rain', 'on', ['on', 'off']), sunsets: pick('sunsets', 'on', ['on', 'off']) };
   const SETUP = [
     ['map', 'Map', [['region', 'SF and neighbors', 'The city at 60% scale. Daly City, South City, Oakland, Berkeley and Marin sit around it.'], ['real', 'Real-scale SF', 'The 7 by 7 mile city at true size'], ['compact', 'Compressed SF', 'Same shape at half size. Fills in faster.']]],
     ['areas', 'Nearby cities', [['grow', 'Open as you grow', 'Daly City opens at 5,000 residents, then South City, Oakland, Berkeley and Marin'], ['open', 'All open']]],
@@ -320,7 +348,7 @@ export function makeUI(game) {
     ['era', 'Era', Object.entries(ERAS).map(([k, e]) => [k, e.label, e.note])],
     ['money', 'Money', [['unlimited', 'Unlimited'], ['budget', 'Budget', 'Taxes pay for what you build']]],
     ['growth', 'Growth', [['0.5', 'Slow'], ['1', 'Normal'], ['2', 'Fast']]],
-    ['traffic', 'Traffic', [['cosmetic', 'Cosmetic'], ['sim', 'Simulated', 'Congestion slows cars and lowers satisfaction']]],
+    ['traffic', 'Traffic', [['sim', 'Simulated', 'Jams slow cars, lengthen commutes and lower satisfaction'], ['cosmetic', 'Cosmetic', 'Cars and lights only, no effect on the city']]],
     ['lv', 'Land value', [['on', 'On'], ['off', 'Off']]],
     ['ui', 'Interface', [['bottom', 'Bottom bar'], ['side', 'Side panel'], ['hide', 'Hide-able', 'Press H to hide the controls']]],
     ['cam', 'Camera', [['angled', 'Angled'], ['top', 'Top-down'], ['street', 'Street level']]],
@@ -359,6 +387,7 @@ export function makeUI(game) {
 
   // ---- per-frame-ish update ------------------------------------------------------------------------
   function update() {
+    if (roadId && !$('info').hidden) { roadAcc += 0.2; if (roadAcc > 2) { roadAcc = 0; showRoad(roadId); } }
     shownPop += (stats.pop - shownPop) * 0.35; if (Math.abs(stats.pop - shownPop) < 1) shownPop = stats.pop;
     const jobs = stats.jobsC + stats.jobsO + stats.jobsI; shownJobs += (jobs - shownJobs) * 0.35; if (Math.abs(jobs - shownJobs) < 1) shownJobs = jobs;
     $('pop').textContent = fmt(shownPop); $('jobs').textContent = fmt(shownJobs);
@@ -383,7 +412,7 @@ export function makeUI(game) {
     renderOptions(false); panels.update();
   }
   return {
-    toast, refresh, update, showInfo, openMenu, tip, tipOpen: () => !$('tip').hidden, toggleHud, setHud, syncSound, syncPops, panels, setup: S, go, titleErr,
+    toast, refresh, update, showInfo, showRoad, openMenu, tip, tipOpen: () => !$('tip').hidden, toggleHud, setHud, syncSound, syncPops, panels, setup: S, go, titleErr,
     resetTier() { lastTier = tierOf(stats.pop); shownPop = stats.pop; }, setDebug(t) { $('debug').textContent = t; }, menuOpen: () => !$('menu').hidden,
     frame() { panels.frame(); },
   };

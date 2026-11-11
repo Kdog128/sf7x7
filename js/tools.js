@@ -180,6 +180,7 @@ export function makeTools(game) {
     const h = T.hover; if (T.tool !== 'road' || !h) return;
     const Tt = ROAD_TYPES[T.roadType], half = Tt.half + Tt.walk;
     if (T.roadMode === 'blocks') { for (const l of blockLines(h)) addPreview(l, half); return; }
+    if (T.roadMode === 'upgrade') { const n = roads.nearestSeg(h.x, h.z, clamp(rig.dist * 0.02, 10, 40)); if (n) addPreview(n.seg.pts, half, true); return; }
     if (T.roadMode === 'copy') {
       if (T.clip) for (const l of clipLines(h)) { const t2 = ROAD_TYPES[l.type]; addPreview(l.pts, t2.half + t2.walk, onLand(l.pts[0], l.pts[1]) && onLand(l.pts[l.pts.length - 2], l.pts[l.pts.length - 1])); }
       else if (drag && drag.mode === 'crect' && drag.moved) { terrainU.uPrevCol.value.set('#e9d9a8'); terrainU.uRect.value.set(Math.min(drag.a.x, h.x), Math.min(drag.a.z, h.z), Math.max(drag.a.x, h.x), Math.max(drag.a.z, h.z)); terrainU.uRectOn.value = 1; }
@@ -192,7 +193,17 @@ export function makeTools(game) {
     if (cumLen(pts).at(-1) < 2) return;
     addPreview(pts, half, !roads.validate(pts));
   }
+  // change a road to another type in place, keeping its course. A one-way clicked again with One-way flips its direction.
+  function retype(id, type) {
+    const s = roads.segs.get(id); if (!s) return false;
+    let pts = s.pts.slice();
+    if (s.type === type) { if (type !== 'oneway') { game.ui.toast(`Already a ${ROAD_TYPES[type].name.toLowerCase()}`); return false; } const r = []; for (let k = pts.length - 2; k >= 0; k -= 2) r.push(pts[k], pts[k + 1]); pts = r; }
+    undo.begin('road'); roads.removeRaw(id); roads.addRaw({ type, pts }); undo.commit(); markDirty(); game.ui.refresh();
+    game.ui.toast(s.type === type ? 'One-way direction flipped' : `Changed to ${ROAD_TYPES[type].name.toLowerCase()}`);
+    return true;
+  }
   function roadClick(g) {
+    if (T.roadMode === 'upgrade') { const n = roads.nearestSeg(g.x, g.z, clamp(rig.dist * 0.02, 10, 40)); if (n) retype(n.seg.id, T.roadType); else game.ui.toast('Click on a road', 'warn'); return; }
     if (T.roadMode === 'blocks') { stampRoads(blockLines(g).map((pts) => ({ type: T.roadType, pts })), 'road blocks'); return; }
     if (T.roadMode === 'copy') { if (T.clip) stampRoads(clipLines(g), 'paste roads'); return; }
     if (T.roadMode === 'straight') {
@@ -271,7 +282,7 @@ export function makeTools(game) {
     if (!hoverDirty) return; hoverDirty = false;
     const h = (T.hover = groundAt(lastPtr.x, lastPtr.y));
     terrainU.uBrush.value.w = 0; terrainU.uRectOn.value = 0;
-    if (T.tool === 'road') updateRoadPreview(); else clearPreview();
+    if (T.tool === 'road') updateRoadPreview(); else { clearPreview(); const rs = T.tool === 'inspect' && T.roadSel && roads.segs.get(T.roadSel); if (rs) addPreview(rs.pts, ROAD_TYPES[rs.type].half, true); }
     if (T.tool === 'zone' && h) {
       terrainU.uPrevCol.value.set(T.zoneId ? ZONES[T.zoneId].color : '#d2533c');
       if (drag && drag.mode === 'zrect') { terrainU.uRect.value.set(Math.min(drag.a.x, h.x), Math.min(drag.a.z, h.z), Math.max(drag.a.x, h.x), Math.max(drag.a.z, h.z)); terrainU.uRectOn.value = 1; }
@@ -426,7 +437,7 @@ export function makeTools(game) {
     const g = groundAt(e.clientX, e.clientY);
     if (d.mode === 'brush') undo.commit();
     else if (d.mode === 'rotate') { if (!d.moved && T.tool === 'road') { T.chain = null; T.ctrl = null; } }
-    else if (d.mode === 'pan') { if (!d.moved && d.click) { T.selected = pickBuilding(e.clientX, e.clientY); game.ui.showInfo(T.selected); } }
+    else if (d.mode === 'pan') { if (!d.moved && d.click) { T.selected = pickBuilding(e.clientX, e.clientY); if (T.selected || !g) game.ui.showInfo(T.selected); else { const n = roads.nearestSeg(g.x, g.z, clamp(rig.dist * 0.02, 8, 30)); if (n && game.ui.showRoad) { T.roadSel = n.seg.id; game.ui.showRoad(n.seg.id); } else game.ui.showInfo(null); } } }
     else if (d.mode === 'crect') { if (g && d.moved) copyRect(d.a, g); }
     else if (d.mode === 'zrect') { if (g) { undo.begin('zone'); paintRect(d.a, g, T.zoneId); undo.commit(); } }
     else if (d.mode === 'brect') { if (d.moved && g && Math.hypot(g.x - d.a.x, g.z - d.a.z) > 6) bulldozeRect(d.a, g); else bulldozeAt(e.clientX, e.clientY, g); }
@@ -489,7 +500,7 @@ export function makeTools(game) {
     finish() { if (T.tool === 'transit') finishLine(); else if (T.tool === 'build' && T.buildKey === 'circuit' && T.circuitDraft) { const d = T.circuitDraft; T.circuitDraft = null; if (d.length < 8) game.ui.toast('A circuit needs at least 4 corners', 'warn'); else if (!circuitOk(d)) game.ui.toast('The circuit needs dry land all the way round', 'warn'); else setCircuit(game.life.snapLoop(d, 60) || d); } hoverDirty = true; game.ui.refresh(true); },
     removeLine, siteBuild(key) { const s = siteOf(key); if (!s) return null; undo.begin('build'); const b = placeAtSite(game, key, s); undo.commit(); if (b && game.react) game.react(b); if (b) { game.ui.toast(`${nm(CAT[key].name)} built at its real site`, 'gold'); rig.set(s.x, s.z, Math.max(700, CAT[key].h * 5), rig.gYaw, 0.5, false); } return b; },
     cancel() { T.chain = null; T.ctrl = null; hoverDirty = true; },
-    touch() { hoverDirty = true; },
+    touch() { hoverDirty = true; }, retype,
     update(dt) {
       // WASD / arrows pan, Q E rotate, R F tilt, + - zoom
       const sp = rig.dist * 1.1 * dt, cy = Math.cos(rig.gYaw), sy = Math.sin(rig.gYaw);

@@ -78,3 +78,10 @@ Not verified: frame rate on a real GPU, sound output, Olympics, 1999 era start, 
 - Highlight view (js/finder.js), in the overlays panel: beams over every nightclub, music venue, comedy club, sports venue, landmark, service or park, with counts and Previous/Next to fly between them.
 - Build options wrap onto a second row on wide screens instead of hiding controls.
 Verified in the browser: audio level with an analyser (ambience about 0.02 RMS, a build sound doubles it, mute goes silent), club placed at 45 degrees on a diagonal avenue with a negative reaction, arena placed at 15 degrees with a positive one, undo and redo, save round trip keeps angles, panel turning, highlight beams and Next.
+
+## Traffic model (Nov 10)
+- js/traffic.js: peak-hour car trips from each block to jobs, routed over the road network (incremental Dijkstra, a few ms a frame, volumes blended between sweeps). Lane capacity and speed by road type (street 1 lane 25 mph, one-way 2 lanes, avenue 2 each way, boulevard 3 each way, highway 3 each way 60 mph with no lights). Junctions get lights (avenue or bigger) or stop signs (streets) automatically; players can override per junction (saved in city.junctions).
+- Congestion: BPR travel times plus junction delay. Effects: average commute lowers satisfaction above 18 min and housing demand above 22 min; per-cell traffic feeds the traffic grid (land value, noise).
+- Cars on screen follow the modelled volumes, stop at red lights and stop signs, queue behind the stop line.
+- UI: road details panel (click a road in Inspect), Upgrade mode in Roads, Traffic section in City panel Economy tab with busiest roads, traffic overlay as colored ribbons per direction, jam posts and tip.
+- Verified locally: presets run 0.1 to 0.5 ms a frame for the model, max road load 11 to 28 percent in presets, a 14x stress load produced jams over 100 percent, save/load keeps junction overrides, undo restores road type.

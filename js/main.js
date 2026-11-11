@@ -21,6 +21,7 @@ import { makeLife } from './life.js';
 import { makeAudio } from './audio.js';
 import { makeMood } from './mood.js';
 import { makeFinder } from './finder.js';
+import { makeTraffic } from './traffic.js';
 import { drawStreets, southHighway, ERAS } from './place.js';
 import { cloud } from './cloud.js';
 import { makePost } from './post.js';
@@ -69,7 +70,7 @@ const game = {
   resetCity() {
     resetWorld(); roads.clear(); rRender.clear(); bRender.clear(); resetSim(); forests.reset(); game.undo.clear();
     const bb = setEdits([]); if (bb) { const G = MAP.G / CELL; updateLand(Math.floor(bb[0] * G) - 2, Math.floor(bb[1] * G) - 2, Math.ceil(bb[2] * G) + 2, Math.ceil(bb[3] * G) + 2); }
-    game.setAreas([], false); resetCity2(true); resetTech(); resetCulture(); game.life.reset(); game.setOverlay('none');
+    game.setAreas([], false); resetCity2(true); resetTech(); resetCulture(); game.life.reset(); game.traffic.reset(); game.setOverlay('none');
     sim.day = 1; sim.time = 10; sim.year0 = 2025; game.tools.state.selected = null; game.tools.cancel(); game.ui.showInfo(null); game.cloudId = null; game.cloudName = '';
   },
   // o: the start-screen choices
@@ -93,7 +94,7 @@ const game = {
     document.getElementById('hud').hidden = false; game.ui.setHud(true); game.ui.syncSound(); game.ui.refresh(true); canvas.focus();
   },
   toSetup() { game.mode = 'title'; const t = document.getElementById('title'); t.hidden = false; t.classList.remove('out'); document.getElementById('hud').hidden = true; document.getElementById('showHud').hidden = true; game.ui.titleErr(''); },
-  afterLoad() { game.life.rebuildTransit(); game.life.setCircuit(culture.f1.pts); game.setGfx(city.cfg.gfx || 'auto'); recompute(); game.audio.setOn(city.cfg.sound !== false); game.ui.resetTier(); game.ui.syncPops(); game.ui.refresh(true); },
+  afterLoad() { game.traffic.reset(); game.life.rebuildTransit(); game.life.setCircuit(culture.f1.pts); game.setGfx(city.cfg.gfx || 'auto'); recompute(); game.audio.setOn(city.cfg.sound !== false); game.ui.resetTier(); game.ui.syncPops(); game.ui.refresh(true); },
   async loadCloud(id, name) { const d = await cloud.load(id); game.readOnly = false; deserialize(game, d); game.cloudId = id; game.cloudName = name || ''; game.begin(); game.ui.toast('City loaded'); },
   setOverlay(k) { game.overlay = k; terrain.uniforms.uHeat.value = k === 'none' ? 0 : 0.86; if (k !== 'none') { recompute(); paintOverlay(k); } if (game.ui.panels) game.ui.panels.legend(); },
   setWeather(k) { const w = city.wx; city.cfg.wxAuto = false; w.manual = 1; w.tFog = k === 'fog' ? 1 : k === 'storm' ? 0.35 : 0; w.tRain = k === 'rain' ? 0.65 : k === 'storm' ? 1 : 0; if (k === 'fog') city.cfg.fog = true; if (k === 'rain' || k === 'storm') city.cfg.rain = true; game.ui.syncPops(); },
@@ -112,6 +113,7 @@ game.undo = makeUndo(roads);
 game.ui = { toast() {}, refresh() {}, showInfo() {}, menuOpen: () => false, setHud() {}, resetTier() {}, syncPops() {}, tip() {} };
 game.life = { reset() {}, onAdded() {}, rebuildTransit() {}, setCircuit() {}, setQuality() {} };
 game.audio = makeAudio(game);
+game.traffic = makeTraffic(game);
 game.finder = makeFinder(game);
 game.mood = makeMood(game); game.react = (b) => game.mood.react(b);
 { // action sounds: every committed player action, plus undo, redo and toolbar buttons
@@ -162,7 +164,7 @@ function tick(dt) {
   buildingUniforms.uSkyRefl.value.copy(sky.zen).lerp(sky.hor, 0.5);
   { const neon = city.cfg.night === 'neon'; buildingUniforms.uGlow.value.set(neon ? 0.8 : 0.5, neon ? 3.0 : 1.5, neon ? 1.25 : 1.0); sky.neon = neon; }
   rRender.update(6); bRender.update(rig.target.x, rig.target.z, 7); flushOverlay();
-  game.life.update(dt, simDt); game.audio.update(dt); game.finder.update(dt);
+  game.life.update(dt, simDt); game.audio.update(dt); game.finder.update(dt); game.traffic.update(dt);
   sky.update(camera, rig.target, rig.dist, game.clock); terrain.updateLOD(camera.position);
   if (game.overlay !== 'none') { ovAcc += dt; if (ovAcc > 1.5) { ovAcc = 0; paintOverlay(game.overlay); } }
   uiAcc += dt; if (uiAcc > 0.2) { uiAcc = 0; if (game.mode === 'play') game.ui.update(); }

@@ -419,3 +419,13 @@ button.link:hover { text-decoration: underline; }
 @media (min-width: 760px) { .options { flex-wrap: wrap; row-gap: var(--space-2); justify-content: center; max-width: min(1180px, calc(100vw - 1.5rem)); } }
 /* when the overlays panel is open, details sit to its left instead of on top of it */
 .row.turn .btn { white-space: nowrap; padding: 0 var(--space-2); font-size: var(--text-xs); min-width: 0; }
+/* road details */
+.info .flowbar { height: 6px; border-radius: 3px; background: var(--border); margin-top: var(--space-3); overflow: hidden; }
+.info .flowbar i { display: block; height: 100%; border-radius: 3px; }
+.info .sub.junction { align-items: center; }
+.info .sub.junction b { font-weight: 500; flex: 1; }
+.info .sub.junction span { flex: 1; text-align: left; color: var(--text); }
+.info .sub.junction .btn { margin: 0; width: auto; flex: none; padding: 0 var(--space-2); }
+.info .row.retype { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-1); margin-top: var(--space-3); }
+.info .row.retype .btn { margin: 0; width: auto; min-width: 0; padding: 0 var(--space-1); font-size: var(--text-xs); white-space: nowrap; }
+.info .note { margin-top: var(--space-2); }

@@ -73,6 +73,7 @@ export const TIPS = [
   ['zone', 'Zone land next to a road. Buildings only appear on lots that touch a street.', (g) => g.roads.segs.size > 0 && stats.count === 0 && g.clock > 20],
   ['demand', 'The R C O I bars show demand. Zone more of whatever is highest.', () => stats.pop > 60],
   ['pan', 'Hold Space and drag to move the map while a tool is active.', (g) => g.tools.state.tool !== 'inspect' && stats.pop > 200],
+  ['jam', 'Some roads are jammed. Click one to see how full it is, then upgrade it, add a parallel route or a transit line.', (g) => g.traffic && g.traffic.stats.ready && g.traffic.stats.jams.some((j) => j.x > 1.1)],
   ['dark', 'Dark zones grow tall in the middle of dense districts.', () => stats.pop > 4000],
   ['parks', 'Parks and services raise land value. Overlays show how far they reach.', () => stats.pop > 1500 && C.count('park') === 0],
   ['transit', 'Traffic is building up. A bus or metro line takes cars off the road.', () => city.trafficAvg > 0.4 && city.lines.length === 0],

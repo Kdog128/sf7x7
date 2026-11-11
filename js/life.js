@@ -37,24 +37,27 @@ export function makeLife(game) {
   const walkU = { value: 0 }, carMat = M.tintMaterial(), CARS = [M.sedan(), M.suv(), M.van(), M.pickup(), M.suv(true)].map((g, k) => inst(g, carMat, k === 0 ? MAXC : MAXC >> 1, true));
   const carLights = inst(unit, glowMat(), MAXC * 2), HALF = [2.22, 2.3, 2.7, 2.7, 2.3];
   const pedMat = M.tintMaterial(walkU), peds = inst(M.person(), pedMat, MAXP), scoots = inst(M.person(true), M.tintMaterial(), 300);
-  const C = { seg: new Int32Array(MAXC), s: new Float32Array(MAXC), dir: new Int8Array(MAXC), sp: new Float32Array(MAXC), lane: new Float32Array(MAXC), kind: new Uint8Array(MAXC), col: new Uint8Array(MAXC), n: 0 };
+  const C = { seg: new Int32Array(MAXC), wait: new Float32Array(MAXC), s: new Float32Array(MAXC), dir: new Int8Array(MAXC), sp: new Float32Array(MAXC), lane: new Float32Array(MAXC), kind: new Uint8Array(MAXC), col: new Uint8Array(MAXC), n: 0 };
   const P = { seg: new Int32Array(MAXP), s: new Float32Array(MAXP), dir: new Int8Array(MAXP), sp: new Float32Array(MAXP), side: new Int8Array(MAXP), kind: new Uint8Array(MAXP), hue: new Float32Array(MAXP), lum: new Float32Array(MAXP), n: 0 };
-  let pool = [], poolW = [], poolTot = 0, pedPool = [], pedSet = new Set(), poolAcc = 9, lastN = -1;
+  let poolReady = false, pool = [], poolW = [], poolTot = 0, pedPool = [], pedSet = new Set(), poolAcc = 9, lastN = -1;
   const SPEED = { street: 9, avenue: 12, boulevard: 14, oneway: 10, highway: 27, ramp: 13 };
   function refreshPool() {
     const R = clamp(rig.dist * 1.25, 380, 3200), tx = rig.target.x, tz = rig.target.z; const pedR = clamp(rig.dist * 2.4, 170, 520); // people gather where the camera is looking
     pool = []; poolW = []; poolTot = 0; pedPool = [];
     for (const id of roads.near(tx - R, tz - R, tx + R, tz + R)) {
       const s = roads.segs.get(id); if (!s || s.len < 12) continue; const b = s.bbox, mx = (b[0] + b[2]) / 2, mz = (b[1] + b[3]) / 2;
-      const act = sample(grid.act, mx, mz), w = s.len * (0.05 + Math.min(1.6, act / 420)) * (s.type === 'highway' ? 2.2 : s.type === 'boulevard' ? 1.5 : s.type === 'avenue' ? 1.2 : 1);
+      const act = sample(grid.act, mx, mz), TR = game.traffic;
+      // expected cars on this segment: cars per hour each way / speed. Without the model, a guess from nearby activity.
+      const w = TR && TR.ready ? s.len * ((TR.volOf(id, 1) / (SPEED[s.type] * Math.max(0.15, TR.speedOf(id, 1))) + TR.volOf(id, -1) / (SPEED[s.type] * Math.max(0.15, TR.speedOf(id, -1)))) / 3600) + 0.002 * s.len * Math.min(1, act / 400)
+        : s.len * (0.05 + Math.min(1.6, act / 420)) * (s.type === 'highway' ? 2.2 : s.type === 'boulevard' ? 1.5 : s.type === 'avenue' ? 1.2 : 1);
       pool.push(id); poolW.push(w); poolTot += w; if (ROAD_TYPES[s.type].access && act > 25 && Math.hypot(mx - tx, mz - tz) < pedR) pedPool.push(id);
     }
-    pedSet = new Set(pedPool);
+    pedSet = new Set(pedPool); poolReady = !!(game.traffic && game.traffic.ready);
   }
   function pickSeg() { let r = Math.random() * poolTot; for (let k = 0; k < pool.length; k++) { r -= poolW[k]; if (r <= 0) return pool[k]; } return pool[pool.length - 1]; }
   function spawnCar(i) {
     const id = pickSeg(), s = roads.segs.get(id); if (!s) return false;
-    C.seg[i] = id; C.s[i] = Math.random() * s.len; C.dir[i] = s.type === 'oneway' || Math.random() < 0.5 ? 1 : -1; C.sp[i] = 0.8 + Math.random() * 0.4; C.lane[i] = Math.random();
+    C.seg[i] = id; C.s[i] = Math.random() * s.len; C.wait[i] = 0; const TR = game.traffic, vf = TR && TR.ready ? TR.volOf(id, 1) : 1, vb = TR && TR.ready ? TR.volOf(id, -1) : 1; C.dir[i] = s.type === 'oneway' || Math.random() * (vf + vb + 1e-6) < vf + 1e-7 ? 1 : -1; C.sp[i] = 0.8 + Math.random() * 0.4; C.lane[i] = Math.random();
     const y = yearOf(), robo = y >= 2020 && Math.random() < clamp(0.04 + city.heat * 0.3, 0, 0.4) + (y >= 2040 ? 0.3 : 0);
     const u = Math.random(); C.kind[i] = robo ? 4 : u < 0.5 ? 0 : u < 0.8 ? 1 : u < 0.9 ? 2 : 3; C.col[i] = Math.floor(Math.random() * CAR_COLS.length); return true;
   }
@@ -62,26 +65,67 @@ export function makeLife(game) {
   const o4 = [0, 0, 0, 0];
   function nextSeg(seg, atEnd) {
     const p = seg.pts, e = atEnd ? p.length - 2 : 0, n = roads.nodes.get(nkey(p[e], p[e + 1])); if (!n || n.segs.size < 2) return null;
-    const opts = []; for (const id of n.segs) if (id !== seg.id) opts.push(id);
-    const id = opts[Math.floor(Math.random() * opts.length)], s = roads.segs.get(id); if (!s) return null;
-    const startHere = Math.abs(s.pts[0] - p[e]) < 0.2 && Math.abs(s.pts[1] - p[e + 1]) < 0.2;
-    if (s.type === 'oneway' && !startHere) return null;
-    return [id, startHere ? 1 : -1, s];
+    // turn onto the next road in proportion to how many cars the traffic model sends that way
+    const TR = game.traffic, ready = TR && TR.ready, opts = []; let W = 0;
+    for (const id of n.segs) {
+      if (id === seg.id) continue; const s = roads.segs.get(id); if (!s) continue;
+      const startHere = Math.abs(s.pts[0] - p[e]) < 0.2 && Math.abs(s.pts[1] - p[e + 1]) < 0.2; if (s.type === 'oneway' && !startHere) continue;
+      const w = ready ? TR.volOf(id, startHere ? 1 : -1) + 4 : 1; opts.push([id, startHere ? 1 : -1, s, w]); W += w;
+    }
+    if (!opts.length) return null;
+    let r = Math.random() * W; for (const o of opts) { r -= o[3]; if (r <= 0) return o; } return opts[opts.length - 1];
   }
+  let vclock = 0;
   const dbg = new Float32Array(12); // where the first few cars are, for tests
-  function stepCars(dt, night) {
+  function stepCars(dt, night, vclock) {
     const hour = sim.time, rush = 0.35 + 0.65 * Math.max(smoothstep(6, 8.5, hour) * (1 - smoothstep(9.5, 11, hour)), smoothstep(15.5, 17.5, hour) * (1 - smoothstep(19, 21, hour)), 0.55 * smoothstep(9, 11, hour) * (1 - smoothstep(20, 23.5, hour)));
     const yr = yearOf(), era = yr < 1912 ? 0.05 : yr < 1930 ? 0.3 : yr < 1950 ? 0.6 : 1; // few motor cars before the twenties
-    const simT = city.cfg.traffic === 'sim', want = pool.length ? Math.min(Q.cars, Math.round((poolTot / 46) * rush * era * (simT ? 1.25 : 1))) : 0;
+    const TR = game.traffic, ready = !!(TR && TR.ready && poolReady), simT = city.cfg.traffic === 'sim';
+    // with the traffic model running, the number of cars follows the modelled volumes (cars per hour / speed = cars per metre);
+    // the model counts peak-hour trips between neighborhoods; short local trips are added as background
+    const want = pool.length ? Math.min(Q.cars, Math.round(ready ? poolTot * era * 2 : (poolTot / 46) * rush * era * (simT ? 1.25 : 1))) : 0;
     while (C.n < want) { if (!spawnCar(C.n)) break; C.n++; } if (C.n > want) C.n = Math.max(want, C.n - 4);
     const R2 = Math.pow(clamp(rig.dist * 1.25, 380, 3200) * 1.25, 2), tx = rig.target.x, tz = rig.target.z, neon = city.cfg.night === 'neon', cn = [0, 0, 0, 0, 0]; let nl = 0;
+    const queues = new Map(), ND = ready ? TR.nodes : null;
+    // 1. move, holding cars that face a red light or a stop sign
     for (let i = 0; i < C.n; i++) {
       let s = roads.segs.get(C.seg[i]); if (!s) { spawnCar(i); s = roads.segs.get(C.seg[i]); if (!s) continue; }
-      const T = ROAD_TYPES[s.type]; let v = SPEED[s.type] * C.sp[i];
+      let v = SPEED[s.type] * C.sp[i];
+      if (ready) v *= TR.speedOf(s.id, C.dir[i]); else if (simT) { ptAt(s, C.s[i], o4); v *= 1 - 0.8 * Math.min(1, sample(grid.traffic, o4[0], o4[1])); }
+      const ds = v * dt, d = C.dir[i], rem = d > 0 ? s.len - C.s[i] : C.s[i];
+      if (ready && rem < 150) {
+        const p = s.pts, e = d > 0 ? p.length - 2 : 0, n = TR.nodeIndex(nkey(p[e], p[e + 1])), ctrl = n >= 0 ? ND.nCtrl[n] : null;
+        if (ctrl === 'signal' || ctrl === 'stop') {
+          const line = ND.nHalf[n] + 2.5;
+          if (rem > line - 0.5) {
+            ptAt(s, d > 0 ? s.len : 0, o4); const dx = o4[2] * d, dz = o4[3] * d;
+            let stop;
+            if (ctrl === 'signal') { const st = TR.light(n, dx, dz, vclock); stop = st === 'r' || (st === 'y' && rem > line + 12); }
+            else stop = C.wait[i] < 1.4;
+            if (stop) {
+              const lanes = s.type === 'oneway' ? 2 : Math.max(1, Math.round(ROAD_TYPES[s.type].half / 3.6)), key = s.id * 16 + (d > 0 ? 0 : 8) + Math.min(7, Math.floor(C.lane[i] * lanes));
+              let q = queues.get(key); if (!q) queues.set(key, (q = [])); q.push([i, rem, line, ds, ctrl === 'stop']); continue;
+            }
+          }
+        }
+      }
+      C.s[i] += d * ds;
+      if (C.s[i] > s.len || C.s[i] < 0) { const nx = nextSeg(s, C.s[i] > s.len); C.wait[i] = 0; if (nx) { C.seg[i] = nx[0]; C.dir[i] = nx[1]; C.s[i] = nx[1] > 0 ? 0 : nx[2].len; } else if (s.type === 'oneway') { spawnCar(i); continue; } else { C.dir[i] = -C.dir[i]; C.s[i] = clamp(C.s[i], 0, s.len); } }
+    }
+    // 2. queues: the first car stops at the line, the rest line up behind it
+    for (const q of queues.values()) {
+      q.sort((a, b) => a[1] - b[1]);
+      for (let k = 0; k < q.length; k++) {
+        const [i, rem, line, ds, isStop] = q[k], lim = line + k * 7.4, s = roads.segs.get(C.seg[i]);
+        const nr = rem <= lim ? rem : Math.max(lim, rem - ds);
+        if (isStop && k === 0 && nr <= lim + 0.3) C.wait[i] += dt;
+        C.s[i] = C.dir[i] > 0 ? s.len - nr : nr;
+      }
+    }
+    // 3. draw
+    for (let i = 0; i < C.n; i++) {
+      const s = roads.segs.get(C.seg[i]); if (!s) continue;
       ptAt(s, C.s[i], o4);
-      if (simT) v *= 1 - 0.8 * Math.min(1, sample(grid.traffic, o4[0], o4[1]));
-      C.s[i] += C.dir[i] * v * dt;
-      if (C.s[i] > s.len || C.s[i] < 0) { const nx = nextSeg(s, C.s[i] > s.len); if (nx) { C.seg[i] = nx[0]; C.dir[i] = nx[1]; C.s[i] = nx[1] > 0 ? 0 : nx[2].len; s = nx[2]; } else if (s.type === 'oneway') { spawnCar(i); continue; } else { C.dir[i] = -C.dir[i]; C.s[i] = clamp(C.s[i], 0, s.len); } ptAt(s, C.s[i], o4); }
       const d = C.dir[i], dx = o4[2] * d, dz = o4[3] * d, T2 = ROAD_TYPES[s.type], lanes = Math.max(1, Math.round(T2.half / 3.6));
       const off = s.type === 'oneway' ? (C.lane[i] - 0.5) * T2.half * 1.2 : (Math.floor(C.lane[i] * lanes) + 0.5) * (T2.half / lanes) * (s.type === 'boulevard' ? 0.82 : 0.92) + (s.type === 'boulevard' ? 1.6 : 0);
       const x = o4[0] - dz * off, z = o4[1] + dx * off;
@@ -94,7 +138,6 @@ export function makeLife(game) {
         put(carLights, nl, x + dx * (hl + st * 0.5), y + 0.62, z + dz * (hl + st * 0.5), 1.6, 0.2, st, dx, dz); carLights.setColorAt(nl++, col.setRGB(2.2, 1.95, 1.4));
         put(carLights, nl, x - dx * (hl + st * 0.4), y + 0.7, z - dz * (hl + st * 0.4), 1.6, 0.18, st * 0.8, dx, dz); carLights.setColorAt(nl++, col.setRGB(1.9, 0.14, 0.08));
       }
-      void T;
     }
     for (let k = 0; k < 5; k++) { const m = CARS[k]; m.count = cn[k]; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; } lastN = C.n;
     carLights.count = nl; carLights.instanceMatrix.needsUpdate = true; if (carLights.instanceColor) carLights.instanceColor.needsUpdate = true;
@@ -413,7 +456,7 @@ export function makeLife(game) {
       const night = game.sky.night; poolAcc += dt;
       if (poolAcc > 0.8) { poolAcc = 0; refreshPool(); }
       const mv = game.mode === 'play' ? dt * Math.min(game.speed, 2) : dt * 0.6;
-      stepCars(mv, night); stepPeds(mv, night); stepTransit(mv, night); stepWeather(dt, simDt); stepSites(); stepFires(mv); stepEvents(mv, night); stepParticles(dt);
+      vclock += mv; stepCars(mv, night, vclock); if (game.traffic) { game.traffic.frame(dt, night, vclock); game.traffic.overlay(dt); } stepPeds(mv, night); stepTransit(mv, night); stepWeather(dt, simDt); stepSites(); stepFires(mv); stepEvents(mv, night); stepParticles(dt);
       lineGroup.visible = game.tools.state.tool === 'transit' || game.overlay === 'transit';
     },
     onAdded, setCircuit, rebuildTransit, firework, confetti, route,
