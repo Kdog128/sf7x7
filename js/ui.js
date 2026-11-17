@@ -13,6 +13,7 @@ import { LINE_TYPES } from './life.js';
 import { costOf, parsePrompt, ERAS, turnStructure } from './place.js';
 import { PRESETS, PRESET_KEYS, EXAMPLES } from './presets.js';
 import { cloud, syncCode, setSyncCode, isPersisted } from './cloud.js';
+import { auth, authReady } from './auth.js';
 import { makePanels } from './panels.js';
 import { fmt } from './util.js';
 import { bindBuildScroll, buildScrollOffset } from './build-scroll.js';
@@ -304,8 +305,35 @@ export function makeUI(game) {
   }
   const rowHtml = (r, title) => `<li data-id="${r.id}"><div><div>${esc(r.name)}${r.id === game.cloudId ? ' <em class="tag2">current</em>' : ''}</div><div class="meta">${r.meta && r.meta.year ? `${r.meta.year}, ` : ''}${fmt((r.meta && r.meta.pop) || 0)} residents, ${MAP_NAMES[(r.meta && r.meta.map) || 'real']}, ${when(r.updated_at)}</div>${r.share_id && !title ? `<div class="meta share"><input readonly value="${esc(cloud.shareUrl(r.share_id, r.meta && r.meta.map))}" aria-label="Share link" /><button class="btn" data-c="copy">Copy</button><button class="btn ghost" data-c="unshare">Stop sharing</button></div>` : ''}</div>
     <div class="acts2"><button class="btn" data-c="load">Load</button>${title ? '' : `<button class="btn" data-c="over" title="Overwrite with the current city">Overwrite</button>${r.share_id ? '' : '<button class="btn" data-c="share">Share</button>'}<button class="btn ghost" data-c="del" aria-label="Delete ${esc(r.name)}"><i data-lucide="trash-2"></i></button>`}</div></li>`;
+  // ---- account: emailed sign-in link; guest saves move onto the account on first sign-in ----------------
+  function renderAccount() {
+    const u = auth.user();
+    $('acctOut').hidden = !!u; $('acctIn').hidden = !u; $('acctNote').hidden = !!u;
+    $('acctWho').textContent = u ? `Signed in as ${u.email}` : '';
+    $('syncRow').hidden = !!u;
+    $('syncNote').textContent = u ? 'Your saves belong to your account. Files and quick slots are below.' : 'Your saves are tied to this code. Enter it on another device to see them there. Keep it private.';
+  }
+  $('acctSend').addEventListener('click', async () => {
+    const b = $('acctSend'); err(''); b.disabled = true;
+    try { await auth.sendLink($('acctEmail').value); $('acctNote').textContent = 'Check your email for the sign-in link. It opens the game again, signed in.'; toast('Sign-in link sent'); }
+    catch (x) { err(x.message); }
+    finally { b.disabled = false; }
+  });
+  $('acctEmail').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('acctSend').click(); });
+  $('acctOutBtn').addEventListener('click', async () => { await auth.signOut(); toast('Signed out'); });
+  auth.onChange((u, why) => { if (!u) game.cloudId = null; renderAccount();   // the current save belonged to the account: autosave must not send it down the guest path
+    if (!$('menu').hidden) renderCloud(); if (why === 'expired') toast('Your sign-in expired. Sign in again to reach your saves.', 'warn'); });
+  authReady.then(async (r) => {
+    renderAccount();
+    if (r.error) { toast(r.error, 'warn'); titleErr(r.error); return; }
+    if (!r.signedIn) return;
+    let moved = 0; try { moved = await cloud.claimGuest(); } catch { /* the guest saves stay on the sync code and can be claimed next time */ }
+    toast(moved ? `Signed in. ${moved} save${moved === 1 ? '' : 's'} from this browser moved to your account.` : `Signed in as ${auth.user().email}`);
+  });
+
   async function renderCloud() {
-    const ul = $('cloudList'); $('syncCode').value = syncCode(); $('cloudNote').textContent = isPersisted() ? '' : 'This browser blocks cookies here, so copy your sync code from below to find these saves again.';
+    renderAccount();
+    const ul = $('cloudList'); $('syncCode').value = syncCode(); $('cloudNote').textContent = auth.user() || isPersisted() ? '' : 'This browser blocks cookies here, so copy your sync code from below to find these saves again.';
     ul.innerHTML = '<li class="meta">Loading saves</li>';
     try { cloudRows = await cloud.list(); ul.innerHTML = cloudRows.length ? cloudRows.map((r) => rowHtml(r, false)).join('') : '<li class="meta">No cloud saves yet. Name the city and press Save.</li>'; icons(); }
     catch (x) { ul.innerHTML = ''; err(x.message); }

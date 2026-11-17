@@ -86,3 +86,12 @@ Verified in the browser: audio level with an analyser (ambience about 0.02 RMS, 
 - UI: road details panel (click a road in Inspect), Upgrade mode in Roads, Traffic section in City panel Economy tab with busiest roads, traffic overlay as colored ribbons per direction, jam posts and tip.
 - Verified locally: presets run 0.1 to 0.5 ms a frame for the model, max road load 11 to 28 percent in presets, a 14x stress load produced jams over 100 percent, save/load keeps junction overrides, undo restores road type.
 - Nov 10: Historic locks and Disasters moved into a More menu in the bottom toolbar. Inspect, Bulldoze and Lock no longer show a hint bar; the options bar only appears for tools with settings. Lock and Unlock show a one-line toast and the More button reads Locking or Unlocking while active.
+
+## Accounts (sign-in by email link)
+- supabase/002_sf7x7_accounts.sql (applied to project iaxxvgwivltgevwkkgmi): `user_id` on sf7x7_saves, owner-only RLS policies for `authenticated`, column grants (clients write name/meta/data only), a trigger with the same limits as guests (12 saves, 9 MB, 4,000 total), `sf7x7_share_mine` for share links and `sf7x7_claim` to move a guest's sync-code saves onto the account. Guest functions unchanged apart from inserting `user_id = null`.
+- js/auth.js: Supabase Auth REST without the SDK (no build step). Magic link with implicit flow; tokens read from the URL fragment and scrubbed from history. Refresh token in a cookie (no other browser storage), access token in memory, renewed 60 s before expiry, one renewal at a time.
+- js/cloud.js: signed in → table REST with the session token; guest → existing RPCs. Ids checked as UUIDs before they go into a query string.
+- Menu: email sign-in row, signed-in state, sign out. Sync code row hidden while signed in.
+- Verified: database rules with a rolled-back SQL test as anon and as two users (isolation, no owner or share_id writes, limit, claim, shared links). Client flow end to end in a browser against a mocked Supabase (link request, return from link, claim, list, save, overwrite, share, load, delete, reload with token rotation, sign out, expired link).
+- Needs in the Supabase dashboard: Authentication > URL Configuration > Redirect URLs must include the game's URLs, or the link returns to the Site URL. The built-in email sender only mails team members, a few per hour.
+- Not verified: a real email round trip (the sandbox cannot reach supabase.co).
