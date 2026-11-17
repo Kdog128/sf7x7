@@ -11,7 +11,8 @@ export function bindBuildScroll(row) {
   let drag = null, suppressClick = false;
 
   function update() {
-    const progress = row.scrollLeft / (row.scrollWidth - row.clientWidth);
+    const max = row.scrollWidth - row.clientWidth;
+    const progress = max > 0 ? Math.min(1, Math.max(0, row.scrollLeft / max)) : 0;
     left.style.opacity = progress;
     right.style.opacity = 1 - progress;
   }
