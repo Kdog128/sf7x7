@@ -322,6 +322,7 @@ export function makeUI(game) {
   $('acctEmail').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('acctSend').click(); });
   $('acctOutBtn').addEventListener('click', async () => { await auth.signOut(); toast('Signed out'); });
   auth.onChange((u, why) => { if (!u) game.cloudId = null; renderAccount();   // the current save belonged to the account: autosave must not send it down the guest path
+    cloudGen++; $('titleCloud').hidden = true; $('titleCloud').innerHTML = '';   // the start screen's list belonged to the old session: close it, drop any pending answer
     if (!$('menu').hidden) renderCloud(); if (why === 'expired') toast('Your sign-in expired. Sign in again to reach your saves.', 'warn'); });
   authReady.then(async (r) => {
     renderAccount();
@@ -437,8 +438,9 @@ export function makeUI(game) {
   });
   $('startCloud').addEventListener('click', async () => {
     const box = $('titleCloud'); if (!box.hidden) { box.hidden = true; return; } box.hidden = false; titleErr(''); box.innerHTML = '<p class="note">Loading saves</p>';
-    try { cloudRows = await cloud.list(); box.innerHTML = `<ul class="slots">${cloudRows.map((r) => rowHtml(r, true)).join('') || '<li class="meta">No cloud saves for this browser yet.</li>'}</ul><div class="row"><button class="btn sm ghost" id="titleImport">Import from a file</button></div>`; icons(); $('titleImport').addEventListener('click', pickFile); }
-    catch (x) { box.innerHTML = ''; titleErr(x.message); }
+    const gen = ++cloudGen;
+    try { const rows = await cloud.list(); if (gen !== cloudGen) return; cloudRows = rows; box.innerHTML = `<ul class="slots">${cloudRows.map((r) => rowHtml(r, true)).join('') || '<li class="meta">No cloud saves for this browser yet.</li>'}</ul><div class="row"><button class="btn sm ghost" id="titleImport">Import from a file</button></div>`; icons(); $('titleImport').addEventListener('click', pickFile); }
+    catch (x) { if (gen !== cloudGen) return; box.innerHTML = ''; titleErr(x.message); }
   });
   $('titleCloud').addEventListener('click', (e) => { const b = e.target.closest('[data-c]'), li = e.target.closest('li[data-id]'); if (b && li) cloudAction(li, b.dataset.c, true); });
   renderSetup();
