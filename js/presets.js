@@ -73,6 +73,11 @@ export const PRESETS = [
 ];
 export const PRESET_KEYS = PRESETS.map((p) => p.k);
 
+// Example cities: full saves kept in the cloud and opened through their share link as an editable copy.
+export const EXAMPLES = [
+  { k: 'kdog', name: "Kdog's Project", share: 'kdogs-project', note: 'A grown-out San Francisco and its neighbors: about 676K residents in 2128.' },
+];
+
 const dist2seg = (x, z, ax, az, bx, bz) => { const ex = bx - ax, ez = bz - az, t = Math.max(0, Math.min(1, ((x - ax) * ex + (z - az) * ez) / (ex * ex + ez * ez || 1))); return Math.hypot(x - ax - ex * t, z - az - ez * t); };
 const distPoly = (x, z, p) => { let b = 1e9; for (let k = 0; k + 3 < p.length; k += 2) b = Math.min(b, dist2seg(x, z, p[k], p[k + 1], p[k + 2], p[k + 3])); return b; };
 const dry = (x, z, m = 18) => x > MAP.minX + 16 && x < MAP.maxX - 16 && z > MAP.minZ + 16 && z < MAP.maxZ - 16 && coastDist(x, z) >= m && heightAt(x, z) > 1 && !lockedAt(x, z);

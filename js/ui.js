@@ -11,7 +11,7 @@ import { tech, waveLabel } from './tech.js';
 import { culture, artistById, FAME, fameTier, ROOM, roomTier, venueRank, LEAGUES, quake, raceNow, setCircuit, olyUnlocked } from './culture.js';
 import { LINE_TYPES } from './life.js';
 import { costOf, parsePrompt, ERAS, turnStructure } from './place.js';
-import { PRESETS, PRESET_KEYS } from './presets.js';
+import { PRESETS, PRESET_KEYS, EXAMPLES } from './presets.js';
 import { cloud, syncCode, setSyncCode, isPersisted } from './cloud.js';
 import { makePanels } from './panels.js';
 import { fmt } from './util.js';
@@ -396,10 +396,13 @@ export function makeUI(game) {
   }
   $('startGo').addEventListener('click', () => go(['empty', 'grid', 'south'].includes(S.start) ? S.start : 'empty'));
   // starter cities: a short list under the button, one click to open one
-  $('presetList').innerHTML = PRESETS.map((p) => `<button class="preset" data-k="${p.k}"><b>${esc(p.name)}</b><span>${esc(p.note)}</span></button>`).join('') + '<p class="note">Each one keeps the Embarcadero, Market, Mission, Van Ness and Geary where they really are.</p>';
+  $('presetList').innerHTML = EXAMPLES.map((x) => `<button class="preset" data-ex="${x.k}"><b>${esc(x.name)}</b><span>${esc(x.note)}</span></button>`).join('') + PRESETS.map((p) => `<button class="preset" data-k="${p.k}"><b>${esc(p.name)}</b><span>${esc(p.note)}</span></button>`).join('') + '<p class="note">Each starter keeps the Embarcadero, Market, Mission, Van Ness and Geary where they really are.</p>';
   function showPresets(on) { const box = $('presetList'); box.hidden = !on; $('startDemo').setAttribute('aria-expanded', String(on)); if (on) { $('titleCloud').hidden = true; $('setup').open = false; } }
   $('startDemo').addEventListener('click', () => showPresets($('presetList').hidden));
-  $('presetList').addEventListener('click', (e) => { const b = e.target.closest('[data-k]'); if (b) { showPresets(false); go(b.dataset.k); } });
+  $('presetList').addEventListener('click', (e) => {
+    const x = e.target.closest('[data-ex]'); if (x) { titleErr(''); x.disabled = true; game.loadExample(x.dataset.ex).then(() => showPresets(false)).catch((err) => titleErr(err.message)).finally(() => { x.disabled = false; }); return; }
+    const b = e.target.closest('[data-k]'); if (b) { showPresets(false); go(b.dataset.k); }
+  });
   $('startCloud').addEventListener('click', async () => {
     const box = $('titleCloud'); if (!box.hidden) { box.hidden = true; return; } box.hidden = false; titleErr(''); box.innerHTML = '<p class="note">Loading saves</p>';
     try { cloudRows = await cloud.list(); box.innerHTML = `<ul class="slots">${cloudRows.map((r) => rowHtml(r, true)).join('') || '<li class="meta">No cloud saves for this browser yet.</li>'}</ul><div class="row"><button class="btn sm ghost" id="titleImport">Import from a file</button></div>`; icons(); $('titleImport').addEventListener('click', pickFile); }
