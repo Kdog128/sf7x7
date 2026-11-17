@@ -1,5 +1,5 @@
 ---
-preview: true
+preview: false
 mode: permissive
 neverApprove:
   - ".macroscope/**"
