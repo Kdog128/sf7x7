@@ -429,6 +429,7 @@ button.link:hover { text-decoration: underline; }
 .info .row.retype { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-1); margin-top: var(--space-3); }
 .info .row.retype .btn { margin: 0; width: auto; min-width: 0; padding: 0 var(--space-1); font-size: var(--text-xs); white-space: nowrap; }
 .info .note { margin-top: var(--space-2); }
+.info .landmark-fact a { color: var(--accent); text-underline-offset: 2px; }
 /* More tools menu, opened from the bottom toolbar */
 .more-pop { position: fixed; z-index: 30; width: 260px; padding: var(--space-1); display: grid; gap: 2px; animation: rise 180ms var(--ease); }
 .more-pop button { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-2) var(--space-3); border-radius: 6px; text-align: left; color: var(--text); background: none; border: 0; font: inherit; cursor: pointer; }
