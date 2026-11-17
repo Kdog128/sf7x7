@@ -8,6 +8,8 @@ export const FIND = [
   { k: 'clubs', name: 'Nightclubs', color: '#d36be0', has: (c) => ['club', 'superclub', 'popup'].includes(c.k) },
   { k: 'music', name: 'Music venues', color: '#f0a43a', has: (c) => c.k === 'musicvenue' },
   { k: 'comedy', name: 'Comedy clubs', color: '#f2dc6a', has: (c) => c.k === 'comedy' },
+  { k: 'bars', name: 'Bars and jazz', color: '#4fb8c8', has: (c) => ['bar', 'jazzbar', 'beergarden'].includes(c.k) },
+  { k: 'casino', name: 'Casinos and theaters', color: '#e0b040', has: (c) => ['casino', 'cinema'].includes(c.k) },
   { k: 'sport', name: 'Sports', color: '#4fb0ea', has: (c) => c.cat === 'sport' },
   { k: 'landmark', name: 'Landmarks', color: '#f4d9a0', has: (c) => c.cat === 'landmark' },
   { k: 'service', name: 'Services', color: '#6fd396', has: (c) => c.cat === 'service' },

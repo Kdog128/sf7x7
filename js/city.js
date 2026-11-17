@@ -34,7 +34,7 @@ export const POLICIES = [
 ];
 const defaults = () => ({
   cfg: { money: 'unlimited', traffic: 'sim', landValue: true, parody: false, wxAuto: true, fog: true, rain: true, sunsets: true, fogAmt: 1, rainAmt: 1, gfx: 'auto', ui: 'bottom', sound: true, tips: true, era: 'today', start: 'empty', areas: 'grow', night: 'real' },
-  treasury: 3000, income: 0, expense: 0, breakdown: {},
+  treasury: 3000, income: 0, expense: 0, breakdown: {}, gamingTotal: 0,
   tax: { R: 9, C: 9, O: 9, I: 9 }, hoodTax: {}, subsidy: { R: false, C: false, O: false, I: false }, policies: {}, custom: [], taxEvents: [],
   sat: 0.6, lvAvg: 0.3, noiseAvg: 0, trafficAvg: 0, transitShare: 0, tourism: 0, rent: 0, heat: 0,
   hist: { pop: [], jobs: [], sat: [], lv: [], cash: [], traffic: [], heat: [] },
@@ -199,12 +199,13 @@ const TAX_EVENTS = [
 export function dailyEconomy(roadsLen) {
   const f = fx(), t = city.tax, lvK = 0.6 + 0.8 * city.lvAvg, P = priceIndex();
   let incMul = 1; for (const e of city.taxEvents) if (e.inc) incMul *= e.inc;
-  const inc = { Residential: stats.pop * 0.0045 * (t.R / 9), Commercial: stats.jobsC * 0.006 * (t.C / 9), Office: stats.jobsO * 0.009 * (t.O / 9) * f.incO, Industrial: stats.jobsI * 0.007 * (t.I / 9), Visitors: city.tourism * 4 };
+  let casinos = 0; for (const b of buildings.values()) if (b.sp === 'casino') casinos++;
+  const inc = { Residential: stats.pop * 0.0045 * (t.R / 9), Commercial: stats.jobsC * 0.006 * (t.C / 9), Office: stats.jobsO * 0.009 * (t.O / 9) * f.incO, Industrial: stats.jobsI * 0.007 * (t.I / 9), Visitors: city.tourism * 4, Gaming: casinos * (5 + city.tourism * 0.6) };
   let income = 0; for (const k in inc) { inc[k] *= lvK * incMul * P; income += inc[k]; }
   let up = 0; for (const b of buildings.values()) if (b.sp && CAT[b.sp]) up += CAT[b.sp].per ? CAT[b.sp].up * b.w * b.d : CAT[b.sp].up;
   const exp = { Roads: roadsLen * 0.00006 * P, Services: up * P, Transit: city.lines.reduce((s, l) => s + 2 + (l.stops.length / 2) * 0.4, 0) * P, Policies: f.cost * (stats.pop / 1000) * P, Subsidies: 'RCOI'.split('').reduce((s, k) => s + (city.subsidy[k] ? 0.9 * (stats.pop / 1000) : 0), 0) * P };
   let expense = 0; for (const k in exp) expense += exp[k];
-  city.income = income; city.expense = expense; city.breakdown = { inc, exp };
+  city.income = income; city.expense = expense; city.breakdown = { inc, exp }; city.gamingTotal += inc.Gaming;
   if (city.cfg.money === 'budget') city.treasury += income - expense;
   for (const e of city.taxEvents) e.days--; city.taxEvents = city.taxEvents.filter((e) => e.days > 0);
   if (seasonOf() === 1 && stats.pop > 1500 && Math.random() < 0.55) { const e = { ...TAX_EVENTS[Math.floor(Math.random() * TAX_EVENTS.length)] }; city.taxEvents.push(e); if (e.cash) { if (city.cfg.money === 'budget') city.treasury += e.cash * P; } post(`${e.name}. ${e.text}`, 'tax', 'sf_budget_office'); }
@@ -242,12 +243,13 @@ export function paintOverlay(kind) {
 // ---- save ------------------------------------------------------------------------------------------
 export function serializeCity() {
   const rle = []; let v = grid.hood[0], n = 0; for (let c = 0; c < N; c++) { if (grid.hood[c] === v) n++; else { rle.push(v, n); v = grid.hood[c]; n = 1; } } rle.push(v, n);
-  const { cfg, treasury, tax, hoodTax, subsidy, policies, custom, taxEvents, hist, hoodNames, lines, nextLine, feed, heat: h, moods, junctions } = city;
-  return { cfg, treasury: Math.round(treasury), tax, hoodTax, subsidy, policies, custom, taxEvents, hist, hoodNames, hoods: rle, lines, nextLine, feed: feed.slice(0, 40), heat: h, moods: moods || [], junctions: junctions || {} };
+  const { cfg, treasury, tax, hoodTax, subsidy, policies, custom, taxEvents, hist, hoodNames, lines, nextLine, feed, heat: h, moods, junctions, gamingTotal } = city;
+  return { cfg, treasury: Math.round(treasury), gamingTotal: Math.round(gamingTotal), tax, hoodTax, subsidy, policies, custom, taxEvents, hist, hoodNames, hoods: rle, lines, nextLine, feed: feed.slice(0, 40), heat: h, moods: moods || [], junctions: junctions || {} };
 }
 export function loadCity(d) {
   resetCity2(false); if (!d) return;
-  for (const k of ['treasury', 'tax', 'hoodTax', 'subsidy', 'policies', 'custom', 'taxEvents', 'lines', 'nextLine', 'feed', 'heat', 'moods', 'junctions']) if (d[k] != null) city[k] = d[k];
+  city.gamingTotal = 0;
+  for (const k of ['treasury', 'gamingTotal', 'tax', 'hoodTax', 'subsidy', 'policies', 'custom', 'taxEvents', 'lines', 'nextLine', 'feed', 'heat', 'moods', 'junctions']) if (d[k] != null) city[k] = d[k];
   if (d.cfg) Object.assign(city.cfg, d.cfg); if (d.hist) Object.assign(city.hist, d.hist);
   if (d.hoodNames) city.hoodNames = d.hoodNames;
   if (d.hoods) { let o = 0; for (let k = 0; k < d.hoods.length && o < N; k += 2) { grid.hood.fill(d.hoods[k], o, Math.min(N, o + d.hoods[k + 1])); o += d.hoods[k + 1]; } }

@@ -41,6 +41,10 @@ function judge(b) {
     return { v: -0.01, wide: 0, r: 280, text: 'Mixed feelings. Some like it, some want earplugs.' };
   }
   if (b.sp === 'musicvenue') return homey ? { v: -0.03, wide: 0.002, r: 300, text: 'Music fans are excited, neighbors less so.' } : { v: 0.04, wide: 0.004, r: 360, text: 'A new room for live music. Fans are buying tickets.' };
+  if (b.sp === 'jazzbar' || b.sp === 'bar') return { v: 0.02, wide: 0, r: 200, text: homey ? 'A new neighborhood bar. The regulars are already picking stools.' : 'Somewhere to grab a drink after work.' };
+  if (b.sp === 'beergarden') return homey ? { v: -0.01, wide: 0, r: 260, text: 'Sunny afternoons, loud evenings. Neighbors are split.' } : { v: 0.03, wide: 0.002, r: 260, text: 'A beer garden. Everyone is suddenly free on Saturday.' };
+  if (b.sp === 'cinema') return { v: 0.03, wide: 0.002, r: 400, text: 'A real movie theater. Date night is sorted.' };
+  if (b.sp === 'casino') return homey ? { v: -0.05, wide: 0.01, r: 600, text: 'Neighbors are worried about traffic and late crowds. The budget office is thrilled.' } : { v: 0.01, wide: 0.01, r: 600, text: 'The casino opens to tour buses and big promises of tax revenue.' };
   if (b.sp === 'comedy') return { v: 0.02, wide: 0, r: 220, text: homey ? 'A small room. Neighbors do not mind.' : 'A new comedy room. Open mic sign-ups are full.' };
   if (BIG.includes(b.sp)) return homey ? { v: -0.03, wide: 0.03, r: 700, text: 'The city is excited. Nearby residents dread game-day traffic.' } : { v: 0.04, wide: 0.03, r: 700, text: pick(['The city is excited for opening day.', 'Season tickets are selling fast.'], s) };
   if (c.cat === 'sport') return { v: 0.02, wide: 0.004, r: 400, text: 'Locals have somewhere new to play.' };

@@ -13,7 +13,7 @@ export const FAME = ['Unknown', 'Local favorite', 'SF staple', 'Headliner'];
 export const fameTier = (f) => (f >= 75 ? 3 : f >= 45 ? 2 : f >= 20 ? 1 : 0);
 export const ROOM = ['Open mic room', 'Showcase room', 'Headliner room'];
 export const roomTier = (s) => (s >= 60 ? 2 : s >= 30 ? 1 : 0);
-const KIND_OF = { club: 'dj', superclub: 'dj', popup: 'dj', music: 'band', comedy: 'comic' };
+const KIND_OF = { club: 'dj', superclub: 'dj', popup: 'dj', music: 'band', jazz: 'band', comedy: 'comic' };
 export const KIND_LABEL = { dj: 'DJ', band: 'Band', comic: 'Comedian' };
 const NAMES = {
   dj: [['DJ', 'Miss', 'Kid', 'Lady', 'Sir', 'Uncle', 'Baby', 'Saint', 'Doctor', 'Young'], ['Fog', 'Sutro', 'Karl', 'Muni', 'Tamale', 'Dolores', 'Sourdough', 'Bart', 'Twin Peaks', 'Lombard', 'Ocean Beach', 'Parrot', 'Cable', 'Divis', 'Outer Sunset', 'Low Tide']],
