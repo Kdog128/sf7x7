@@ -56,6 +56,7 @@ function fixture(t, width, content) {
 test('fades track the start, middle and end of an overflowing row', t => {
   const { row } = fixture(t);
   assert.equal(row.left.hidden, true);
+  assert.equal(row.right.hidden, false);
   assert.equal(row.right.style.opacity, 1);
   row.scrollLeft = 150; fire(row, 'scroll');
   assert.equal(row.left.hidden, false);
@@ -63,8 +64,12 @@ test('fades track the start, middle and end of an overflowing row', t => {
   assert.equal(row.left.style.opacity, 0.25);
   assert.equal(row.right.style.opacity, 0.75);
   row.scrollLeft = 600; fire(row, 'scroll');
+  assert.equal(row.left.hidden, false);
   assert.equal(row.left.style.opacity, 1);
   assert.equal(row.right.hidden, true);
+  row.scrollLeft = 0; fire(row, 'scroll');
+  assert.equal(row.left.hidden, true);
+  assert.equal(row.right.hidden, false);
 });
 
 test('fitted content hides both fades and resize updates their visibility', t => {
