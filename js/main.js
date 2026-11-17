@@ -25,7 +25,7 @@ import { makeTraffic } from './traffic.js';
 import { drawStreets, southHighway, ERAS } from './place.js';
 import { cloud } from './cloud.js';
 import { makePost } from './post.js';
-import { PRESETS, PRESET_KEYS, buildPreset } from './presets.js';
+import { PRESETS, PRESET_KEYS, EXAMPLES, buildPreset } from './presets.js';
 
 const canvas = document.getElementById('c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
@@ -95,6 +95,12 @@ const game = {
   },
   toSetup() { game.mode = 'title'; const t = document.getElementById('title'); t.hidden = false; t.classList.remove('out'); document.getElementById('hud').hidden = true; document.getElementById('showHud').hidden = true; game.ui.titleErr(''); },
   afterLoad() { game.traffic.reset(); game.life.rebuildTransit(); game.life.setCircuit(culture.f1.pts); game.setGfx(city.cfg.gfx || 'auto'); recompute(); game.audio.setOn(city.cfg.sound !== false); game.ui.resetTier(); game.ui.syncPops(); game.ui.refresh(true); },
+  async loadExample(k) {
+    const ex = EXAMPLES.find((e) => e.k === k); if (!ex) throw new Error('That example city could not be found');
+    const s = await cloud.shared(ex.share); const map = s.data.map || 'real'; if (map !== MAPMODE) return withMap(map, 'example', k);
+    game.readOnly = false; deserialize(game, s.data); game.cloudId = null; game.cloudName = ex.name; document.getElementById('cityName').textContent = ex.name;
+    game.begin(); game.ui.toast(`${ex.name} loaded. It's your copy: save it to keep your changes.`);
+  },
   async loadCloud(id, name) { const d = await cloud.load(id); game.readOnly = false; deserialize(game, d); game.cloudId = id; game.cloudName = name || ''; game.begin(); game.ui.toast('City loaded'); },
   setOverlay(k) { game.overlay = k; terrain.uniforms.uHeat.value = k === 'none' ? 0 : 0.86; if (k !== 'none') { recompute(); paintOverlay(k); } if (game.ui.panels) game.ui.panels.legend(); },
   setWeather(k) { const w = city.wx; city.cfg.wxAuto = false; w.manual = 1; w.tFog = k === 'fog' ? 1 : k === 'storm' ? 0.35 : 0; w.tRain = k === 'rain' ? 0.65 : k === 'storm' ? 1 : 0; if (k === 'fog') city.cfg.fog = true; if (k === 'rain' || k === 'storm') city.cfg.rain = true; game.ui.syncPops(); },
@@ -244,7 +250,12 @@ const reveal = () => { loading.classList.add('out'); setTimeout(() => loading.re
 const withMap = (map, key, val) => { const u = new URL(location.href); u.search = ''; if (map !== 'region') u.searchParams.set('map', map); u.searchParams.set(key, val); location.href = u.toString(); };
 async function boot() {
   tick(0.016); render();
-  const shared = params.get('city'), load = params.get('load');
+  const shared = params.get('city'), load = params.get('load'), example = params.get('example');
+  if (example) {
+    document.getElementById('loadMsg').textContent = 'Opening the example city';
+    try { await game.loadExample(example); history.replaceState(null, '', location.pathname + (MAPMODE !== 'region' ? `?map=${MAPMODE}` : '')); reveal(); requestAnimationFrame(frame); return; }
+    catch (x) { document.getElementById('title').hidden = false; game.ui.titleErr(x.message); reveal(); requestAnimationFrame(frame); return; }
+  }
   if (shared || load) {
     document.getElementById('loadMsg').textContent = shared ? 'Opening the shared city' : 'Loading your city';
     try {
