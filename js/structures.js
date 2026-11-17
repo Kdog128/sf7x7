@@ -230,6 +230,32 @@ const E = {
     const { W, D } = F, y = F.baseY;
     lbox(m, F, 0.8, 2, W - 0.8, D - 2, F.lo - 1, y + 8, C.brick, C.roof, win(b, F, 3, 4, 0.45, 0.55, ST.home, y + 4)); sign(m, F, 2, 1.6, W - 2, 1.9, y + 4.2, 1.3, C.gold); lbox(m, F, 1.4, 0.8, W - 1.4, 2, y + 3.6, y + 3.9, C.red, C.red);
   },
+  jazzbar(m, F, b) {
+    const { W, D } = F, y = F.baseY, wl = b.seed & 1 ? hx('#3b2f2a') : C.brick;
+    lbox(m, F, 0.8, 2, W - 0.8, D - 2, F.lo - 1, y + 8, wl, C.roof, win(b, F, 3, 4, 0.4, 0.5, ST.shop, y + 4)); cornice(m, F, 0.8, 2, W - 0.8, D - 2, y + 8, 0.5, C.gold, 0.25, C.roof);
+    lbox(m, F, 1.4, 0.8, W - 1.4, 2, y + 3.4, y + 3.7, hx('#1f2a44'), hx('#1f2a44')); sign(m, F, 2, 1.6, W - 2, 1.9, y + 4.4, 1.2, C.neonC);
+  },
+  bar(m, F, b) {
+    const { W, D } = F, y = F.baseY, wl = [C.brick, hx('#5a524c'), hx('#6b4a3a')][b.seed % 3], neon = [C.neonM, C.neonC, C.gold][(b.seed >> 2) % 3];
+    lbox(m, F, 0.8, 1.5, W - 0.8, D - 1.5, F.lo - 1, y + 7, wl, C.roof, win(b, F, 3, 3.8, 0.45, 0.5, ST.shop, y + 3.6)); sign(m, F, W / 2 - 2.5, 1.2, W / 2 + 2.5, 1.5, y + 3.8, 1, neon);
+  },
+  beergarden(m, F, b) {
+    const { W, D } = F, y = F.baseY, n = 3, step = (W - 8) / n;
+    lbox(m, F, 1, D - 10, W - 1, D - 1.5, F.lo - 1, y + 6, C.brick, C.roof, win(b, F, 4, 3.8, 0.5, 0.55, ST.shop, y + 3.4));
+    for (let k = 0; k < n; k++) for (let q = 0; q < 2; q++) lbox(m, F, 4 + k * step, 5 + q * 8, 4 + k * step + step * 0.6, 6.6 + q * 8, y, y + 0.9, C.wood, C.wood);
+    for (let k = 0; k <= n; k++) sign(m, F, 3 + k * ((W - 6) / n) - 0.15, 2, 3 + k * ((W - 6) / n) + 0.15, 2.3, y + 4, 0.3, C.gold);
+  },
+  cinema(m, F, b) {
+    const { W, D } = F, y = F.baseY;
+    lbox(m, F, 2, 5, W - 2, D - 2, F.lo - 1, y + 15, C.stone, C.roof); cornice(m, F, 2, 5, W - 2, D - 2, y + 15, 0.8, C.white, 0.4, C.roof);
+    lbox(m, F, 3, 1.5, W - 3, 5, y + 4.5, y + 5.5, C.dark, C.dark); sign(m, F, 3, 1.4, W - 3, 1.6, y + 5.5, 2.2, hx('#f3e6c4')); sign(m, F, W / 2 - 1, 4.4, W / 2 + 1, 5, y + 8, 7, C.red);
+  },
+  casino(m, F, b) {
+    const { W, D } = F, y = F.baseY, Wn = win(b, F, 4, 4.5, 0.8, 0.8, ST.shop);
+    lbox(m, F, 2, 4, W - 2, D - 2, F.lo - 1, y + 12, C.white, C.roof, Wn); sign(m, F, 2, 3.8, W - 2, 4.1, y + 11, 0.6, C.gold);
+    lbox(m, F, W / 2 - 10, D / 2 - 8, W / 2 + 10, D / 2 + 8, y + 12, y + 26, C.glass, C.roof, win(b, F, 3.5, 4, 0.9, 0.85, ST.shop, y + 12)); sign(m, F, W / 2 - 10.2, D / 2 - 8.2, W / 2 + 10.2, D / 2 - 7.9, y + 23, 2.4, C.neonM);
+    lbox(m, F, W / 2 - 8, 0.5, W / 2 + 8, 4, y + 4.5, y + 5.2, C.gold, C.gold);
+  },
 };
 E.oracle = E.ballpark;
 
@@ -299,6 +325,11 @@ export const CATALOG = [
   S('popup', 'Warehouse pop-up', 'night', 5, 5, 13, 30, 1, 15, { cap: 800, noise: [380, 0.6], venue: 'club', temp: 3 }),
   S('musicvenue', 'Music venue', 'night', 5, 6, 22, 260, 4, 60, { cap: 1300, noise: [300, 0.4], venue: 'music' }),
   S('comedy', 'Comedy club', 'night', 2, 3, 9, 60, 1, 16, { cap: 180, noise: [120, 0.15], venue: 'comedy' }),
+  S('jazzbar', 'Jazz bar', 'night', 2, 3, 8, 45, 0.8, 10, { cap: 120, noise: [90, 0.1], amen: [140, 0.12], venue: 'jazz' }),
+  S('bar', 'Bar', 'night', 2, 2, 7, 20, 0.4, 6, { noise: [100, 0.14], amen: [120, 0.1] }),
+  S('beergarden', 'Beer garden', 'night', 4, 4, 6, 35, 0.6, 12, { noise: [170, 0.22], amen: [200, 0.2] }),
+  S('cinema', 'Movie theater', 'night', 5, 6, 15, 150, 2.2, 30, { cap: 900, noise: [60, 0.05], amen: [260, 0.25] }),
+  S('casino', 'Casino', 'night', 7, 7, 26, 520, 7, 240, { cap: 3000, noise: [240, 0.28], casino: true }),
   S('ballpark', 'Ballpark', 'sport', 22, 22, 44, 2000, 28, 700, { cap: 40000, noise: [520, 0.35], league: 'MLB', tour: 3 }),
   S('arena', 'Arena', 'sport', 16, 16, 34, 1600, 24, 600, { cap: 18000, noise: [420, 0.3], league: 'NBA,WNBA,NHL', tour: 3 }),
   S('stadium', 'Football stadium', 'sport', 28, 24, 56, 3000, 36, 900, { cap: 68500, noise: [650, 0.4], league: 'NFL', tour: 4 }),
@@ -378,6 +409,7 @@ export const VENUE_NAMES = {
   superclub: ['Club Space West', 'The Midway Yard', 'Pier 70 Hall', 'Sutro Warehouse', 'Cow Palace Annex'],
   music: ['The Fillmore', 'The Independent', 'Great American Music Hall', 'The Warfield', 'Bimbo\'s 365', 'The Chapel', 'Bottom of the Hill', 'August Hall', 'The Regency'],
   comedy: ['Cobb\'s Comedy Club', 'Punch Line', 'Cheaper Than Therapy', 'The Setup'],
+  jazz: ['Black Cat', 'Club Deluxe', 'Mr. Tipple\'s', 'Keys Jazz Bistro', 'Biscuits and Blues', 'The Lost Church'],
   popup: ['Pier Pop-up', 'Dogpatch Warehouse', 'Bayview Hangar', 'Mint Yard', 'Fog Machine'],
 };
 void rng;
