@@ -9,12 +9,13 @@ import { CAT, styleFor, businessName } from './structures.js';
 import { ext } from './buildings.js';
 import { HOOD } from './data/hoods.js';
 import { clamp, smoothstep, rng } from './util.js';
+import { landValue, landValueBonus } from './land-value.js';
 
 export const LC = 8, LW = Math.ceil(GX / LC), LH = Math.ceil(GZ / LC), LS = LC * CELL; // coarse cell = 64 m
 const N = LW * LH, f32 = () => new Float32Array(N);
 export const trafficFx = { grid: null, noise: null, commute: 0, ready: false };   // set by traffic.js: congestion and noise per coarse cell, average commute
 export const moodFx = { list: null, wide: null };   // set by mood.js: resident reactions to new structures
-export const grid = { mood: f32(), dens: f32(), act: f32(), noise: f32(), amen: f32(), edu: f32(), health: f32(), police: f32(), fire: f32(), transit: f32(), cap: f32(), traffic: f32(), lv: f32(), sat: f32(), water: f32(), isLand: new Uint8Array(N), hood: new Uint8Array(N) };
+export const grid = { mood: f32(), dens: f32(), act: f32(), noise: f32(), amen: f32(), industry: f32(), highway: f32(), edu: f32(), health: f32(), police: f32(), fire: f32(), transit: f32(), cap: f32(), traffic: f32(), lv: f32(), sat: f32(), water: f32(), isLand: new Uint8Array(N), hood: new Uint8Array(N) };
 export const lidx = (x, z) => clamp(Math.floor((x - MAP.minX) / LS), 0, LW - 1) + clamp(Math.floor((z - MAP.minZ) / LS), 0, LH - 1) * LW;
 export const sample = (g, x, z) => g[lidx(x, z)];
 const bx = (b) => MAP.minX + (b.i + b.w / 2) * CELL, bz = (b) => MAP.minZ + (b.j + b.d / 2) * CELL;
@@ -105,7 +106,8 @@ let dirty = true, game = null; const tmp = f32(), tmp2 = f32();
 export function initCity(g) {
   game = g; initHoods();
   sim.styleFor = (b) => styleFor(b, hoodName(hoodAt(bx(b), bz(b))), yearOf(), sim.rand);
-  sim.capBonus = (b) => { const f = fx(); let c = f.cap + (city.heat > 0.45 ? 1 : 0); if (city.cfg.landValue) { const v = sample(grid.lv, bx(b), bz(b)); c += v > 0.7 ? 1 : v < 0.16 ? -1 : 0; } return c; };
+  sim.capBonus = (b) => { const f = fx(); return f.cap + (city.heat > 0.45 ? 1 : 0); };
+  sim.landValueBonus = (b) => landValueBonus(sample(grid.lv, bx(b), bz(b)), city.cfg.landValue);
   ext.business = (b, nr) => businessName(hoodName(hoodAt(bx(b), bz(b))), nr);
 }
 function stamp(g, x, z, r, s, add) {
@@ -127,7 +129,7 @@ export const STOP_R = { bus: 260, cable: 260, metro: 650, ferry: 520 };
 export const extraNoise = []; // transient sources from events: [x, z, radius, strength]
 export function recompute() {
   const g = grid, f = fx(), night = sim.time > 20 || sim.time < 3 ? 1 : 0.35;
-  for (const k of ['dens', 'noise', 'amen', 'edu', 'health', 'police', 'fire', 'transit', 'cap']) g[k].fill(0);
+  for (const k of ['dens', 'noise', 'amen', 'industry', 'highway', 'edu', 'health', 'police', 'fire', 'transit', 'cap']) g[k].fill(0);
   let tour = 0;
   for (const b of buildings.values()) {
     const x = bx(b), z = bz(b), c = lidx(x, z);
@@ -138,14 +140,20 @@ export function recompute() {
       if (e.svc) stamp(g[e.svc[0]], x, z, e.svc[1], 1, false);
       if (e.noise) stamp(g.noise, x, z, e.noise[0], e.noise[1] * (e.venue ? night : 0.5) * f.noiseMul, true);
       if (e.tour) tour += e.tour;
-    } else if (b.zone === 7 || b.zone === 8 || b.zone === 12) stamp(g.noise, x, z, 200, Math.min(0.5, 0.1 + b.jobs * 0.002) * f.noiseMul, true);
+    } else if (b.zone === 7 || b.zone === 8 || b.zone === 12) {
+      stamp(g.noise, x, z, 200, Math.min(0.5, 0.1 + b.jobs * 0.002) * f.noiseMul, true);
+      stamp(g.industry, x, z, 250, Math.min(1, 0.25 + (b.jobs || 0) * 0.002), true);
+    }
     else if (b.zone === 10) tour += b.jobs * 0.004; else if (b.zone === 4 && b.level >= 3) tour += 0.3;
   }
   for (const s of game.roads.segs.values()) {
     const T = ROAD_TYPES[s.type], p = s.pts, cl = cumLen(p), L = cl[cl.length - 1], lanes = T.half / 1.7, hw = s.type === 'highway';
     for (let d = 0; d <= L; d += LS * 0.75) {
       let k = 0; while (k < cl.length - 2 && cl[k + 1] < d) k++; const t = (d - cl[k]) / (cl[k + 1] - cl[k] || 1), x = p[k * 2] + (p[k * 2 + 2] - p[k * 2]) * t, z = p[k * 2 + 1] + (p[k * 2 + 3] - p[k * 2 + 1]) * t;
-      g.cap[lidx(x, z)] += lanes; if (hw) stamp(g.noise, x, z, 190, 0.3 * f.noiseMul, false);
+      g.cap[lidx(x, z)] += lanes; if (hw) {
+        stamp(g.noise, x, z, 190, 0.3 * f.noiseMul, false);
+        stamp(g.highway, x, z, 240, 1, false);
+      }
     }
   }
   for (const l of city.lines) for (let k = 0; k < l.stops.length; k += 2) stamp(g.transit, l.stops[k], l.stops[k + 1], STOP_R[l.type] * Math.max(K, 0.6), l.type === 'metro' ? 1 : 0.75, true);
@@ -164,7 +172,8 @@ export function recompute() {
     if (simT && trafficFx.noise && trafficFx.noise[c]) g.noise[c] += trafficFx.noise[c] * f.noiseMul;
     const svc = (g.edu[c] + g.health[c] + g.police[c] + g.fire[c]) / 4, noise = Math.min(1, g.noise[c]), amen = Math.min(1, g.amen[c]);
     g.traffic[c] = traffic;
-    g.lv[c] = useLv ? clamp(0.18 + 0.3 * act + 0.22 * amen + 0.16 * svc + 0.12 * tr + g.water[c] - 0.3 * noise - (simT ? 0.12 * Math.min(1, traffic) : 0) + city.heat * 0.14, 0, 1) : 0.5;
+    g.lv[c] = landValue({ activity: act, amenity: amen, services: svc, transit: tr, water: g.water[c],
+      noise, traffic, industry: g.industry[c], highway: g.highway[c], heat: city.heat, enabled: useLv, simulatedTraffic: simT });
     const ht = city.hoodTax[g.hood[c]] || 0;
     g.sat[c] = clamp(0.52 + 0.24 * svc + 0.14 * amen + 0.1 * tr - 0.34 * noise - (simT ? 0.2 * Math.min(1, traffic) : 0) - ht * 0.015 + cityWide + g.mood[c], 0, 1);
     const w = g.dens[c]; if (w > 0) { wSat += g.sat[c] * w; wPop += w; wLv += g.lv[c] * w; wTr += traffic * w; wNoise += noise * w; wTransit += Math.min(1, tr) * w; const h = stats2[g.hood[c]]; if (h) { h.sat += g.sat[c] * w; h.lv += g.lv[c] * w; h.w += w; } }
@@ -222,7 +231,7 @@ export const heatScale = new THREE.Vector2(GX / (LW * LC), GZ / (LH * LC));
 const ramp = (stops) => (v) => { v = clamp(v, 0, 1) * (stops.length - 1); const k = Math.min(stops.length - 2, Math.floor(v)), t = v - k, a = stops[k], b = stops[k + 1]; return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]; };
 const R = { good: ramp([[150, 60, 50], [205, 170, 80], [90, 150, 95]]), bad: ramp([[90, 150, 95], [205, 170, 80], [170, 60, 50]]), purple: ramp([[70, 70, 90], [120, 90, 170], [215, 160, 215]]), blue: ramp([[60, 70, 80], [60, 120, 190], [150, 205, 235]]), teal: ramp([[70, 70, 70], [50, 140, 140], [150, 220, 205]]) };
 export const OVERLAYS = [['none', 'None'], ['lv', 'Land value'], ['dens', 'Density'], ['traffic', 'Traffic'], ['transit', 'Transit'], ['noise', 'Noise'], ['svc', 'Service coverage'], ['sat', 'Satisfaction'], ['hood', 'Neighborhoods']];
-export const OVERLAY_NOTE = { lv: 'Low to high', dens: 'Residents and jobs', traffic: 'How full each road is, free to jammed', transit: 'Reach of stops', noise: 'Quiet to loud', svc: 'Schools, health, police, fire', sat: 'Unhappy to happy', hood: 'One color per neighborhood' };
+export const OVERLAY_NOTE = { lv: 'Low to high. Parks, water, landmarks and transit help; industry and highways hurt.', dens: 'Residents and jobs', traffic: 'How full each road is, free to jammed', transit: 'Reach of stops', noise: 'Quiet to loud', svc: 'Schools, health, police, fire', sat: 'Unhappy to happy', hood: 'One color per neighborhood' };
 export function paintOverlay(kind) {
   const g = grid;
   for (let c = 0; c < N; c++) {

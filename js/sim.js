@@ -29,7 +29,7 @@ export const frontierSize = (z) => lists[z].length;
 
 export const sim = {
   demand: { R: 0.3, C: 0, O: 0, I: 0 }, growth: 1, acc: 0, uacc: 0, time: 10, day: 1, lastBuilt: null, rand: Math.random,
-  year0: 2025, mod: { R: 0, C: 0, O: 0, I: 0 }, upMul: 1, fc: 72, capBonus: null, styleFor: null, onDay: null,
+  year0: 2025, mod: { R: 0, C: 0, O: 0, I: 0 }, upMul: 1, fc: 72, capBonus: null, landValueBonus: null, styleFor: null, onDay: null,
 };
 export const yearOf = (day = sim.day) => sim.year0 + Math.floor((day - 1) / 4);
 export const SEASONS = ['Winter', 'Spring', 'Summer', 'Fall'];
@@ -111,6 +111,9 @@ function levelCap(b) {
   if (sim.capBonus) cap = Math.min(max, cap + sim.capBonus(b));
   const c = centrality(b), area = b.w * b.d;
   cap = Math.min(cap, c > 0.5 ? 5 : c > 0.4 ? 4 : c > 0.28 ? 3 : c > 0.15 ? 2 : 1);
+  // Apply desirability after centrality so valuable sites can actually grow taller.
+  // Low-density zoning, lot-size limits and locked buildings retain their existing rules.
+  if (sim.landValueBonus) cap = Math.min(max, cap + sim.landValueBonus(b));
   if (area < 6) cap = Math.min(cap, 3); else if (area < 9) cap = Math.min(cap, 4);
   return Math.max(1, cap - [0, 0, 0, 1, 1, 2][b.seed % 6]);              // not every owner builds to the limit
 }
