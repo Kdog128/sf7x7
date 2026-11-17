@@ -6,6 +6,7 @@ import { ROAD_TYPES } from './roads.js';
 import { ext } from './buildings.js';
 import { slots, saveSlot, loadSlot, exportFile, importFile, serialize, metaOf, MAP_NAMES } from './save.js';
 import { CAT, CATALOG, CATS } from './structures.js';
+import { LANDMARK_FACTS } from './landmark-facts.js';
 import { city, nm, money, dateLabel, hoodName, hoodAt, bpos, sample, grid, OVERLAYS, markDirty } from './city.js';
 import { tech, waveLabel } from './tech.js';
 import { culture, artistById, FAME, fameTier, ROOM, roomTier, venueRank, LEAGUES, quake, raceNow, setCircuit, olyUnlocked } from './culture.js';
@@ -231,8 +232,11 @@ export function makeUI(game) {
       const c = CAT[b.sp], v = culture.venues.find((q) => q.id === b.id), rows = [];
       if (b.jobs) rows.push(['Jobs', fmt(b.jobs)]); if (b.res) rows.push(['Residents', fmt(b.res)]); if (c.fx.cap) rows.push(['Capacity', fmt(c.fx.cap)]);
       rows.push(['Upkeep', `${money((c.per ? c.up * b.w * b.d : c.up))} a day`]); if (c.fx.amen) rows.push(['Raises land value within', `${Math.round(c.fx.amen[0])} m`]); if (c.fx.svc) rows.push(['Covers', `${Math.round(c.fx.svc[1])} m`]); if (c.fx.noise) rows.push(['Noise reaches', `${Math.round(c.fx.noise[0])} m`]);
-      rows.push(['Lot', `${(b.yaw ? b.mw : b.w) * CELL} by ${(b.yaw ? b.md : b.d) * CELL} m${b.yaw ? `, turned ${Math.round(Math.abs(b.yaw) * 180 / Math.PI)}°` : ''}`], ['Built', built]); if (hood) rows.push(['Neighborhood', esc(hood)]);
-      h += `<h2>${esc(v ? v.name : nm(c.name))}</h2><div class="kind"><span class="dot" style="background:#dcb466"></span>${v ? nm(c.name) + ' · ' : ''}${KIND[c.cat]}</div><dl>${rows.map((r) => `<dt>${r[0]}</dt><dd>${r[1]}</dd>`).join('')}</dl>`;
+      rows.push(['Lot', `${(b.yaw ? b.mw : b.w) * CELL} by ${(b.yaw ? b.md : b.d) * CELL} m${b.yaw ? `, turned ${Math.round(Math.abs(b.yaw) * 180 / Math.PI)}°` : ''}`], [LANDMARK_FACTS[b.sp] ? 'Built in city' : 'Built', built]); if (hood) rows.push(['Neighborhood', esc(hood)]);
+      h += `<h2>${esc(v ? v.name : nm(c.name))}</h2><div class="kind"><span class="dot" style="background:#dcb466"></span>${v ? nm(c.name) + ' · ' : ''}${KIND[c.cat]}</div>`;
+      const fact = !city.cfg.parody && LANDMARK_FACTS[b.sp];
+      if (fact) h += `<p class="note landmark-fact">${esc(fact.text)} (<a href="${esc(fact.url)}" target="_blank" rel="noopener noreferrer">${esc(fact.source)}</a>)</p>`;
+      h += `<dl>${rows.map((r) => `<dt>${r[0]}</dt><dd>${r[1]}</dd>`).join('')}</dl>`;
       if (v) {
         const rank = venueRank().findIndex((q) => q.id === v.id) + 1, tn = v.tonight;
         h += `<div class="sub"><b>${ROOM[roomTier(v.score)]}</b><span>Rank ${rank} of ${culture.venues.length}, score ${Math.round(v.score)}</span></div>`;
