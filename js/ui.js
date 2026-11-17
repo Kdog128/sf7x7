@@ -15,6 +15,7 @@ import { PRESETS, PRESET_KEYS } from './presets.js';
 import { cloud, syncCode, setSyncCode, isPersisted } from './cloud.js';
 import { makePanels } from './panels.js';
 import { fmt } from './util.js';
+import { bindBuildScroll, buildScrollOffset } from './build-scroll.js';
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -36,10 +37,16 @@ export function makeUI(game) {
   // ---- tool options -------------------------------------------------------------------------------
   const seg = (name, cur, items) => `<div class="seg" role="group">${items.map(([v, l, t]) => `<button data-act="${name}" data-v="${v}" aria-pressed="${String(v) === String(cur)}" title="${t || ''}">${l}</button>`).join('')}</div>`;
   const chip = (act, v, on, label, sub = '', dis = false, title = '') => `<button class="sw" data-act="${act}" data-v="${v}" aria-pressed="${on}" ${dis ? 'disabled' : ''} title="${esc(title)}">${esc(label)}${sub ? `<em>${sub}</em>` : ''}</button>`;
+  const buildStrip = (key, label, content, classes = '') => `<div class="build-strip"><div class="build-scroll ${classes}" data-build-scroll="${key}" role="group" aria-label="${label}">${content}</div><span class="scroll-fade scroll-fade-left" aria-hidden="true" hidden></span><span class="scroll-fade scroll-fade-right" aria-hidden="true" hidden></span></div>`;
+  let clearBuildScroll = [];
   function renderOptions(force) {
     const t = T(), key = [t.tool, t.roadType, t.roadMode, t.clip ? t.clip.segs.length : 0, t.zoneId, t.zoneMode, t.snapGrid, t.snapAngle, t.buildCat, t.buildKey, t.lineType, t.lineDraft ? t.lineDraft.length : 0, city.lines.length, t.terraMode, t.lockMode, t.circuitMode, t.circuitDraft ? t.circuitDraft.length : 0, !!culture.f1.pts, t.hoodId, city.cfg.parody, olyUnlocked(), JSON.stringify(t.fill.items)].join('|');
     if (key === optKey && !force) return; optKey = key;
     const el = $('options'); let h = '';
+    const sameTab = el.dataset.buildTab === t.buildCat && t.tool === 'build';
+    const offsets = Object.fromEntries([...el.querySelectorAll('[data-build-scroll]')].map((row) => [row.dataset.buildScroll, row.scrollLeft]));
+    for (const clear of clearBuildScroll) clear();
+    clearBuildScroll = [];
     if (game.readOnly) h = '<span class="hint">Shared city. Look around: drag to move, right-drag to rotate, scroll or pinch to zoom. Click a building for details.</span>';
     else if (t.tool === 'inspect' || t.tool === 'bulldoze' || t.tool === 'lock') h = '';
     else if (t.tool === 'disaster') h = `<span class="hint">Click a building to set it alight. Fire stations in range put fires out.</span><div class="grp"><span>Magnitude <b id="magLbl">${t.quakeMag.toFixed(1)}</b></span><input type="range" id="quakeMag" min="5" max="8.2" step="0.1" value="${t.quakeMag}" aria-label="Earthquake magnitude" /><button class="btn sm danger" data-act="quake">Trigger earthquake</button></div>`;
@@ -59,14 +66,14 @@ export function makeUI(game) {
         <div class="grp">${seg('zoneMode', t.zoneMode, [['brush', 'Brush', 'Paint cells'], ['fill', 'Block fill', 'Fill the block enclosed by roads'], ['rect', 'Rectangle', 'Drag a rectangle']])}</div>`;
       if (t.zoneMode === 'brush') h += `<div class="grp"><span>Size</span><input type="range" id="brush" min="1" max="15" step="2" value="${t.brush}" aria-label="Brush size" /></div>`;
     } else if (t.tool === 'build') {
-      h = `<div class="grp">${seg('buildCat', t.buildCat, [...CATS, ['fill', 'Smart-fill']])}</div>`;
+      h = buildStrip('tabs', 'Build categories', seg('buildCat', t.buildCat, [...CATS, ['fill', 'Smart-fill']]), 'build-tabs');
       if (t.buildCat === 'fill') {
         h += `<div class="grp">${[['tree', 'Trees'], ['bench', 'Benches'], ['lamp', 'Lamps'], ['planter', 'Planters'], ['fountain', 'Fountains'], ['plaza', 'Plazas']].map(([k, l]) => `<label class="check"><input type="checkbox" data-fill="${k}" ${t.fill.items[k] ? 'checked' : ''}/> ${l}</label>`).join('')}</div>
           <div class="grp"><span>Density</span><input type="range" id="fillDens" min="0.1" max="1" step="0.05" value="${t.fill.density}" aria-label="Density" /></div>
           <div class="grp"><input type="text" id="fillPrompt" placeholder="Or describe it: leafy and well lit" value="${esc(t.fill.prompt)}" aria-label="Describe the detail you want" /><button class="btn sm" data-act="prompt">Apply</button></div><span class="hint">Then drag over an area.</span>`;
       } else {
         const list = CATALOG.filter((c) => c.cat === t.buildCat && !c.hidden);
-        h += `<div class="grp items">${list.map((c) => chip('buildKey', c.k, t.buildKey === c.k, nm(c.name), money(costOf(c.k, 1, 1)) + (c.per ? '/cell' : ''), c.needs === 'olympics' && !olyUnlocked(), c.needs ? 'Win the Olympic bid to unlock' : '')).join('')}${t.buildCat === 'sport' ? chip('buildKey', 'circuit', t.buildKey === 'circuit', 'Street circuit') : ''}</div>`;
+        h += buildStrip('items', 'Build items', `${list.map((c) => chip('buildKey', c.k, t.buildKey === c.k, nm(c.name), money(costOf(c.k, 1, 1)) + (c.per ? '/cell' : ''), c.needs === 'olympics' && !olyUnlocked(), c.needs ? 'Win the Olympic bid to unlock' : '')).join('')}${t.buildCat === 'sport' ? chip('buildKey', 'circuit', t.buildKey === 'circuit', 'Street circuit') : ''}`, 'grp items');
         const c = CAT[t.buildKey];
         if (t.buildKey === 'circuit') h += `<div class="grp">${seg('circuitMode', t.circuitMode, [['prebuilt', 'Prebuilt', 'Click to drop a ready-made loop'], ['draw', 'Draw', 'Click each corner, then press Enter']])}${t.circuitDraft ? '<button class="btn sm" data-act="finish">Close the loop</button>' : ''}${culture.f1.pts ? '<button class="btn sm" data-act="race">Race now</button><button class="btn sm ghost" data-act="nocircuit">Remove</button>' : ''}</div>`;
         else if (c && c.rect) h += '<span class="hint">Drag a rectangle.</span>';
@@ -83,7 +90,14 @@ export function makeUI(game) {
       h = `<div class="grp">${seg('terraMode', t.terraMode, [['raise', 'Raise'], ['lower', 'Lower'], ['flatten', 'Flatten'], ['fill', 'Landfill', 'Turn shallow water into land'], ['dig', 'Dig', 'Turn land into water'], ['pier', 'Pier', 'Drag a straight strip of new land']])}</div>
         <div class="grp"><span>Size</span><input type="range" id="terraSize" min="40" max="320" step="10" value="${t.terraSize}" aria-label="Brush size" /></div><span class="hint">${t.terraMode === 'pier' ? 'Drag from the shore out into the water.' : 'Hold and drag. Roads and buildings stay put.'}</span>`;
     }
-    el.innerHTML = h; el.hidden = !h;
+    el.classList.toggle('build-options', t.tool === 'build' && !game.readOnly);
+    el.dataset.buildTab = t.tool === 'build' ? t.buildCat : '';
+    el.innerHTML = h; el.hidden = !h; el.scrollLeft = 0;
+    for (const row of el.querySelectorAll('[data-build-scroll]')) {
+      const name = row.dataset.buildScroll;
+      row.scrollLeft = buildScrollOffset(name, sameTab, offsets);
+      clearBuildScroll.push(bindBuildScroll(row));
+    }
   }
   $('options').addEventListener('click', (e) => {
     const b = e.target.closest('[data-act]'); if (!b || b.tagName === 'INPUT') return;
