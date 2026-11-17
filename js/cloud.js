@@ -2,7 +2,7 @@
 // - Signed in (auth.js): the player's own rows, read and written directly under row level security.
 // - Guest: a private sync code kept in a cookie, through a small set of security definer functions.
 // Signing in moves the guest's saves onto the account (sf7x7_claim).
-import { SB_URL as URL_, SB_KEY as KEY, auth } from './auth.js';
+import { SB_URL as URL_, SB_KEY as KEY, auth, authReady } from './auth.js';
 const COOKIE = 'sf7x7_sync';
 let token = null, persisted = false;
 
@@ -67,16 +67,26 @@ async function unpack(str) {
   const bin = atob(str.slice(2)), buf = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
   return JSON.parse(await new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream('gzip'))).text());
 }
+// Once per page load, signed in: move this browser's guest saves onto the account. Runs on every signed-in
+// load, so a claim that failed (or saves past the 12 limit) is retried; with nothing left it is a no-op.
+// Every cloud call waits for it, so the list never shows, and ?load never misses, a save mid-move.
+const claimed = authReady.then(async () => {
+  const code = readCookie(); if (!code) return { moved: 0 };
+  try { const t = await auth.token(); return t ? { moved: await rpc('sf7x7_claim', { p_token: code }, t) } : { moved: 0 }; }
+  catch { return { moved: 0, failed: true }; }
+});
+const acctToken = async () => { await claimed; return auth.token(); };
+
 export const cloud = {
   /** The signed-in player, or null for a guest. */
   account: () => auth.user(),
-  async list() { const t = await auth.token(); return t ? mine.list(t) : rpc('sf7x7_list', { p_token: syncCode() }); },
-  async save(name, meta, data, id = null) { const t = await auth.token(), packed = await pack(data); return t ? mine.save(t, name, meta, packed, id) : rpc('sf7x7_save', { p_token: syncCode(), p_id: id, p_name: name, p_meta: meta, p_data: packed }); },
-  async load(id) { const t = await auth.token(); return unpack(t ? await mine.load(t, id) : await rpc('sf7x7_load', { p_token: syncCode(), p_id: id })); },
-  async remove(id) { const t = await auth.token(); return t ? mine.remove(t, id) : rpc('sf7x7_delete', { p_token: syncCode(), p_id: id }); },
-  async share(id, on = true) { const t = await auth.token(); return t ? mine.share(t, id, on) : rpc('sf7x7_share', { p_token: syncCode(), p_id: id, p_on: on }); },
-  /** Move this browser's guest saves onto the signed-in account. Returns how many moved. */
-  async claimGuest() { const t = await auth.token(), code = readCookie(); if (!t || !code) return 0; return rpc('sf7x7_claim', { p_token: code }, t); },
+  async list() { const t = await acctToken(); return t ? mine.list(t) : rpc('sf7x7_list', { p_token: syncCode() }); },
+  async save(name, meta, data, id = null) { const t = await acctToken(), packed = await pack(data); return t ? mine.save(t, name, meta, packed, id) : rpc('sf7x7_save', { p_token: syncCode(), p_id: id, p_name: name, p_meta: meta, p_data: packed }); },
+  async load(id) { const t = await acctToken(); return unpack(t ? await mine.load(t, id) : await rpc('sf7x7_load', { p_token: syncCode(), p_id: id })); },
+  async remove(id) { const t = await acctToken(); return t ? mine.remove(t, id) : rpc('sf7x7_delete', { p_token: syncCode(), p_id: id }); },
+  async share(id, on = true) { const t = await acctToken(); return t ? mine.share(t, id, on) : rpc('sf7x7_share', { p_token: syncCode(), p_id: id, p_on: on }); },
+  /** How this load's claim of guest saves went: { moved, failed? }. */
+  claimed: () => claimed,
   async shared(shareId) { const r = await rpc('sf7x7_get_shared', { p_share: shareId }); if (!r || !r.length) throw new Error('This shared city no longer exists'); return { name: r[0].name, meta: r[0].meta, data: await unpack(r[0].data) }; },
   shareUrl(shareId, map) { const u = new URL(location.href); u.search = ''; u.hash = ''; u.searchParams.set('city', shareId); if (map && map !== 'region') u.searchParams.set('map', map); return u.toString(); },
 };

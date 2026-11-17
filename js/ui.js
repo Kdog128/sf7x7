@@ -315,7 +315,7 @@ export function makeUI(game) {
   }
   $('acctSend').addEventListener('click', async () => {
     const b = $('acctSend'); err(''); b.disabled = true;
-    try { await auth.sendLink($('acctEmail').value); $('acctNote').textContent = 'Check your email for the sign-in link. It opens the game again, signed in.'; toast('Sign-in link sent'); }
+    try { await auth.sendLink($('acctEmail').value); $('acctNote').textContent = 'Check your email for the sign-in link, and open it in this browser. It opens the game again, signed in.'; toast('Sign-in link sent'); }
     catch (x) { err(x.message); }
     finally { b.disabled = false; }
   });
@@ -327,10 +327,7 @@ export function makeUI(game) {
     renderAccount();
     if (r.error) { toast(r.error, 'warn'); titleErr(r.error); return; }
     if (!auth.user()) return;
-    // Claim on every signed-in load, not only right after the link: a claim that failed last time (or
-    // saves over the 12 limit) is retried here. With nothing left under the sync code it is a no-op.
-    let moved = 0, failed = false; try { moved = await cloud.claimGuest(); } catch { failed = true; }
-    const n = `${moved} save${moved === 1 ? '' : 's'}`;
+    const { moved, failed } = await cloud.claimed(), n = `${moved} save${moved === 1 ? '' : 's'}`;
     if (failed) toast(`${r.signedIn ? 'Signed in, but s' : 'S'}aves from this browser could not be moved to your account yet. They will move the next time the game opens.`, 'warn');
     else if (moved) toast(`${r.signedIn ? 'Signed in. ' : ''}${n} from this browser moved to your account.`);
     else if (r.signedIn) toast(`Signed in as ${auth.user().email}`);
