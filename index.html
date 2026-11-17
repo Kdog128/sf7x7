@@ -138,12 +138,17 @@
     <div class="modal-head"><h2 id="menuTitle">Menu</h2><button class="icon" id="menuClose" aria-label="Close menu"><i data-lucide="x"></i></button></div>
     <section>
       <h3>Cloud saves</h3>
+      <div class="account" id="account">
+        <div class="row" id="acctOut"><input type="email" id="acctEmail" autocomplete="email" placeholder="Email for a sign-in link" aria-label="Email address" /><button class="btn" id="acctSend"><i data-lucide="mail"></i>Sign in</button></div>
+        <p class="note" id="acctNote">Sign in to keep your saves on every device. Saves made on this browser come with you.</p>
+        <div class="row" id="acctIn" hidden><span class="note" id="acctWho"></span><button class="btn ghost" id="acctOutBtn">Sign out</button></div>
+      </div>
       <div class="row"><input type="text" id="saveName" maxlength="60" placeholder="Name this city" aria-label="Save name" /><button class="btn primary" id="cloudSave"><i data-lucide="cloud-upload"></i>Save</button></div>
       <ul class="slots" id="cloudList"></ul>
       <p class="note" id="cloudNote"></p>
       <details class="more"><summary>Sync code and files</summary>
-        <p class="note">Your saves are tied to this code. Enter it on another device to see them there. Keep it private.</p>
-        <div class="row"><input type="text" id="syncCode" aria-label="Sync code" spellcheck="false" /><button class="btn" id="syncUse">Use code</button></div>
+        <p class="note" id="syncNote">Your saves are tied to this code. Enter it on another device to see them there. Keep it private.</p>
+        <div class="row" id="syncRow"><input type="text" id="syncCode" aria-label="Sync code" spellcheck="false" /><button class="btn" id="syncUse">Use code</button></div>
         <div class="row">
           <button class="btn" id="exportBtn"><i data-lucide="download"></i>Export to file</button>
           <button class="btn" id="importBtn"><i data-lucide="upload"></i>Import from file</button>

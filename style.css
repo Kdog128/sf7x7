@@ -166,9 +166,9 @@ input[type='range'] { width: 100%; accent-color: var(--accent); height: 24px; }
 .menu-btn[aria-pressed='true'] { color: var(--accent); }
 .btn.sm { min-height: 32px; padding: 0 var(--space-3); font-size: var(--text-xs); }
 .btn[aria-pressed='true'] { border-color: var(--accent); color: var(--accent); }
-input[type='text'], select { height: 36px; min-width: 0; flex: 1; background: oklch(1 0 0 / 0.07); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); font: inherit; padding: 0 var(--space-3); }
+input[type='text'], input[type='email'], select { height: 36px; min-width: 0; flex: 1; background: oklch(1 0 0 / 0.07); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); font: inherit; padding: 0 var(--space-3); }
 select { flex: 0 0 auto; } select option { background: var(--bg-solid); color: var(--text); }
-input[type='text']::placeholder { color: oklch(0.75 0.02 80 / 0.6); }
+input[type='text']::placeholder, input[type='email']::placeholder { color: oklch(0.75 0.02 80 / 0.6); }
 .options input[type='text'] { width: 230px; height: 32px; flex: none; }
 .options .check { white-space: nowrap; min-height: 28px; font-size: var(--text-xs); }
 .sw em { font-style: normal; color: var(--muted); margin-left: 6px; font-variant-numeric: tabular-nums; }
@@ -315,7 +315,7 @@ figure canvas { width: 100%; height: 76px; background: oklch(1 0 0 / 0.04); bord
 .options[hidden] { display: none; }
 @media (max-width: 720px) { .banner { white-space: normal; width: calc(100vw - 2 * var(--space-3)); } }
 .hud, .title, .bottom, .toolbar, .options, .labels { -webkit-user-select: none; user-select: none; }
-.hud input[type="text"], .modal input[type="text"] { -webkit-user-select: text; user-select: text; }
+.hud input[type="text"], .modal input[type="text"], .modal input[type="email"] { -webkit-user-select: text; user-select: text; }
 @media (max-width: 480px) {
   .clock { gap: var(--space-1); padding: var(--space-2); }
   .clock .speed button[data-speed="2"] { display: none; }
@@ -457,3 +457,9 @@ button.link:hover { text-decoration: underline; }
   .hud.ui-side .bottom { max-width: 100%; }
   .hud.ui-side .options.build-options { flex: 0 1 auto; width: 100%; }
 }
+
+/* account row in the menu */
+.account { display: grid; gap: var(--space-2); margin-bottom: var(--space-3); }
+.account .note { margin: 0; }
+#acctIn { align-items: center; justify-content: space-between; }
+#acctWho { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

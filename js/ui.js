@@ -13,6 +13,7 @@ import { LINE_TYPES } from './life.js';
 import { costOf, parsePrompt, ERAS, turnStructure } from './place.js';
 import { PRESETS, PRESET_KEYS, EXAMPLES } from './presets.js';
 import { cloud, syncCode, setSyncCode, isPersisted } from './cloud.js';
+import { auth, authReady } from './auth.js';
 import { makePanels } from './panels.js';
 import { fmt } from './util.js';
 import { bindBuildScroll, buildScrollOffset } from './build-scroll.js';
@@ -304,11 +305,43 @@ export function makeUI(game) {
   }
   const rowHtml = (r, title) => `<li data-id="${r.id}"><div><div>${esc(r.name)}${r.id === game.cloudId ? ' <em class="tag2">current</em>' : ''}</div><div class="meta">${r.meta && r.meta.year ? `${r.meta.year}, ` : ''}${fmt((r.meta && r.meta.pop) || 0)} residents, ${MAP_NAMES[(r.meta && r.meta.map) || 'real']}, ${when(r.updated_at)}</div>${r.share_id && !title ? `<div class="meta share"><input readonly value="${esc(cloud.shareUrl(r.share_id, r.meta && r.meta.map))}" aria-label="Share link" /><button class="btn" data-c="copy">Copy</button><button class="btn ghost" data-c="unshare">Stop sharing</button></div>` : ''}</div>
     <div class="acts2"><button class="btn" data-c="load">Load</button>${title ? '' : `<button class="btn" data-c="over" title="Overwrite with the current city">Overwrite</button>${r.share_id ? '' : '<button class="btn" data-c="share">Share</button>'}<button class="btn ghost" data-c="del" aria-label="Delete ${esc(r.name)}"><i data-lucide="trash-2"></i></button>`}</div></li>`;
+  // ---- account: emailed sign-in link; guest saves move onto the account on first sign-in ----------------
+  function renderAccount() {
+    const u = auth.user();
+    $('acctOut').hidden = !!u; $('acctIn').hidden = !u; $('acctNote').hidden = !!u;
+    $('acctWho').textContent = u ? `Signed in as ${u.email}` : '';
+    $('syncRow').hidden = !!u;
+    $('syncNote').textContent = u ? 'Your saves belong to your account. Files and quick slots are below.' : 'Your saves are tied to this code. Enter it on another device to see them there. Keep it private.';
+  }
+  $('acctSend').addEventListener('click', async () => {
+    const b = $('acctSend'); err(''); b.disabled = true;
+    try { await auth.sendLink($('acctEmail').value); $('acctNote').textContent = 'Check your email for the sign-in link, and open it in this browser. It opens the game again, signed in.'; toast('Sign-in link sent'); }
+    catch (x) { err(x.message); }
+    finally { b.disabled = false; }
+  });
+  $('acctEmail').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('acctSend').click(); });
+  $('acctOutBtn').addEventListener('click', async () => { await auth.signOut(); toast('Signed out'); });
+  auth.onChange((u, why) => { if (!u) game.cloudId = null; renderAccount();   // the current save belonged to the account: autosave must not send it down the guest path
+    cloudGen++; $('titleCloud').hidden = true; $('titleCloud').innerHTML = '';   // the start screen's list belonged to the old session: close it, drop any pending answer
+    if (!$('menu').hidden) renderCloud(); if (why === 'expired') toast('Your sign-in expired. Sign in again to reach your saves.', 'warn'); });
+  authReady.then(async (r) => {
+    renderAccount();
+    if (r.error) { toast(r.error, 'warn'); titleErr(r.error); return; }
+    if (!auth.user()) return;
+    const { moved, failed } = await cloud.claimed(), n = `${moved} save${moved === 1 ? '' : 's'}`;
+    if (failed) toast(`${r.signedIn ? 'Signed in, but s' : 'S'}aves from this browser could not be moved to your account yet. They will move the next time the game opens.`, 'warn');
+    else if (moved) toast(`${r.signedIn ? 'Signed in. ' : ''}${n} from this browser moved to your account.`);
+    else if (r.signedIn && auth.user()) toast(`Signed in as ${auth.user().email}`);
+  });
+
+  let cloudGen = 0;   // a list that comes back after a newer render (say, after signing out) is stale: drop it
   async function renderCloud() {
-    const ul = $('cloudList'); $('syncCode').value = syncCode(); $('cloudNote').textContent = isPersisted() ? '' : 'This browser blocks cookies here, so copy your sync code from below to find these saves again.';
+    const gen = ++cloudGen;
+    renderAccount();
+    const ul = $('cloudList'); $('syncCode').value = syncCode(); $('cloudNote').textContent = auth.user() || isPersisted() ? '' : 'This browser blocks cookies here, so copy your sync code from below to find these saves again.';
     ul.innerHTML = '<li class="meta">Loading saves</li>';
-    try { cloudRows = await cloud.list(); ul.innerHTML = cloudRows.length ? cloudRows.map((r) => rowHtml(r, false)).join('') : '<li class="meta">No cloud saves yet. Name the city and press Save.</li>'; icons(); }
-    catch (x) { ul.innerHTML = ''; err(x.message); }
+    try { const rows = await cloud.list(); if (gen !== cloudGen) return; cloudRows = rows; ul.innerHTML = cloudRows.length ? cloudRows.map((r) => rowHtml(r, false)).join('') : '<li class="meta">No cloud saves yet. Name the city and press Save.</li>'; icons(); }
+    catch (x) { if (gen !== cloudGen) return; ul.innerHTML = ''; err(x.message); }
   }
   const defaultName = () => `San Francisco ${yearOf()}`;
   async function cloudSave(id = null, name = null) {
@@ -405,8 +438,9 @@ export function makeUI(game) {
   });
   $('startCloud').addEventListener('click', async () => {
     const box = $('titleCloud'); if (!box.hidden) { box.hidden = true; return; } box.hidden = false; titleErr(''); box.innerHTML = '<p class="note">Loading saves</p>';
-    try { cloudRows = await cloud.list(); box.innerHTML = `<ul class="slots">${cloudRows.map((r) => rowHtml(r, true)).join('') || '<li class="meta">No cloud saves for this browser yet.</li>'}</ul><div class="row"><button class="btn sm ghost" id="titleImport">Import from a file</button></div>`; icons(); $('titleImport').addEventListener('click', pickFile); }
-    catch (x) { box.innerHTML = ''; titleErr(x.message); }
+    const gen = ++cloudGen;
+    try { const rows = await cloud.list(); if (gen !== cloudGen) return; cloudRows = rows; box.innerHTML = `<ul class="slots">${cloudRows.map((r) => rowHtml(r, true)).join('') || '<li class="meta">No cloud saves for this browser yet.</li>'}</ul><div class="row"><button class="btn sm ghost" id="titleImport">Import from a file</button></div>`; icons(); $('titleImport').addEventListener('click', pickFile); }
+    catch (x) { if (gen !== cloudGen) return; box.innerHTML = ''; titleErr(x.message); }
   });
   $('titleCloud').addEventListener('click', (e) => { const b = e.target.closest('[data-c]'), li = e.target.closest('li[data-id]'); if (b && li) cloudAction(li, b.dataset.c, true); });
   renderSetup();
