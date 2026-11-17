@@ -14,8 +14,6 @@ export function bindBuildScroll(row) {
     const progress = row.scrollLeft / (row.scrollWidth - row.clientWidth);
     left.style.opacity = progress;
     right.style.opacity = 1 - progress;
-    left.hidden = row.scrollLeft <= 0;
-    right.hidden = row.scrollLeft >= row.scrollWidth - row.clientWidth;
   }
 
   function finish(e) {
