@@ -326,9 +326,14 @@ export function makeUI(game) {
   authReady.then(async (r) => {
     renderAccount();
     if (r.error) { toast(r.error, 'warn'); titleErr(r.error); return; }
-    if (!r.signedIn) return;
-    let moved = 0; try { moved = await cloud.claimGuest(); } catch { /* the guest saves stay on the sync code and can be claimed next time */ }
-    toast(moved ? `Signed in. ${moved} save${moved === 1 ? '' : 's'} from this browser moved to your account.` : `Signed in as ${auth.user().email}`);
+    if (!auth.user()) return;
+    // Claim on every signed-in load, not only right after the link: a claim that failed last time (or
+    // saves over the 12 limit) is retried here. With nothing left under the sync code it is a no-op.
+    let moved = 0, failed = false; try { moved = await cloud.claimGuest(); } catch { failed = true; }
+    const n = `${moved} save${moved === 1 ? '' : 's'}`;
+    if (failed) toast(`${r.signedIn ? 'Signed in, but s' : 'S'}aves from this browser could not be moved to your account yet. They will move the next time the game opens.`, 'warn');
+    else if (moved) toast(`${r.signedIn ? 'Signed in. ' : ''}${n} from this browser moved to your account.`);
+    else if (r.signedIn) toast(`Signed in as ${auth.user().email}`);
   });
 
   async function renderCloud() {

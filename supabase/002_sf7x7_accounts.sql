@@ -94,7 +94,8 @@ begin
   select 12 - count(*) into room from public.sf7x7_saves where user_id = uid;
   if room <= 0 then return 0; end if;
   update public.sf7x7_saves s set user_id = uid, owner_hash = null
-    where s.id in (select g.id from public.sf7x7_saves g where g.owner_hash = public.sf7x7_hash(p_token) order by g.updated_at desc limit room);
+    where s.id in (select g.id from public.sf7x7_saves g where g.owner_hash = public.sf7x7_hash(p_token) order by g.updated_at desc limit room)
+      and s.owner_hash = public.sf7x7_hash(p_token) and s.user_id is null;   -- rechecked after a row lock wait: a concurrent claim by another account wins, not both
   get diagnostics n = row_count;
   return n;
 end $$;

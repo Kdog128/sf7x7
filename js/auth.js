@@ -6,6 +6,7 @@ const COOKIE = 'sf7x7_auth', EARLY = 60;   // renew this many seconds before exp
 
 let session = null;          // { access, expiresAt, user: { id, email } }
 let refreshing = null;       // one renewal at a time, so a rotated refresh token is never spent twice
+let epoch = 0;               // bumped on sign-out; a renewal that started before it must not sign the player back in
 const listeners = new Set();
 const emit = (why) => { for (const fn of listeners) { try { fn(session && session.user, why); } catch { /* a listener's problem */ } } };
 
@@ -36,9 +37,14 @@ function adopt(j) {
 async function renew() {
   if (refreshing) return refreshing;
   const rt = readCookie(); if (!rt) { session = null; return null; }
+  const mine = epoch;
   refreshing = (async () => {
-    try { adopt(await authFetch('token?grant_type=refresh_token', { refresh_token: rt })); return session; }
-    catch (e) {
+    try {
+      const j = await authFetch('token?grant_type=refresh_token', { refresh_token: rt });
+      if (mine !== epoch) return null;   // signed out while this was in flight
+      adopt(j); return session;
+    } catch (e) {
+      if (mine !== epoch) return null;
       if (e.status >= 400 && e.status < 500) { session = null; writeCookie(null); emit('expired'); return null; }   // revoked or used up: sign out
       throw new Error('Could not reach the sign-in server. Check the connection and try again.');                     // network or 5xx: keep the cookie
     } finally { refreshing = null; }
@@ -93,7 +99,7 @@ export const auth = {
   },
   async signOut() {
     const access = session && session.access;
-    session = null; writeCookie(null); emit('signedOut');
+    epoch++; refreshing = null; session = null; writeCookie(null); emit('signedOut');
     if (access) { try { await authFetch('logout?scope=local', {}, access); } catch { /* the local sign-out already happened */ } }
   },
 };
