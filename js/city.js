@@ -181,7 +181,7 @@ export function recompute() {
   city.hoodStats = stats2.map((h, id) => ({
     id, name: hoodName(id), pop: h.pop, jobs: h.jobs, sat: h.w ? h.sat / h.w : 0, lv: h.w ? h.lv / h.w : 0,
     rent: rentOf(h.w ? h.lv / h.w : 0), monthlyResidentialRent: h.monthlyResidentialRent,
-    avgRentPerResident: h.monthlyResidentialRent / h.pop,
+    avgRentPerResident: h.pop ? h.monthlyResidentialRent / h.pop : null,
     venues: h.venues, vibe: vibeOf(h),
   })).filter((h) => h.id && (h.pop || h.jobs));
   // feed back into growth
