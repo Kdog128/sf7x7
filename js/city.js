@@ -156,7 +156,7 @@ export function recompute() {
   const workers = stats.pop * 0.52, jobs = stats.jobsC + stats.jobsO + stats.jobsI, balance = workers > 50 ? clamp((jobs - workers) / workers, -1, 1) : 0;
   const taxPain = ((city.tax.R - 9) * 0.012), cityWide = f.sat - Math.abs(balance) * 0.06 - taxPain - Math.max(0, city.heat) * Math.max(0, sim.demand.R) * 0.1 + (city.boost || 0) + (moodFx.wide ? moodFx.wide() : 0) - (simT && trafficFx.ready ? clamp((trafficFx.commute - 18) * 0.005, 0, 0.12) : 0);
   g.mood.fill(0); if (moodFx.list) for (const [x, z, r, v] of moodFx.list()) stampAdd(g.mood, x, z, r, v);
-  const stats2 = city.hoodNames.map(() => ({ pop: 0, jobs: 0, sat: 0, lv: 0, w: 0, venues: 0 }));
+  const stats2 = city.hoodNames.map(() => ({ pop: 0, jobs: 0, sat: 0, lv: 0, w: 0, venues: 0, monthlyResidentialRent: 0 }));
   for (let c = 0; c < N; c++) {
     if (!g.isLand[c]) { g.lv[c] = 0; g.sat[c] = 0; g.traffic[c] = 0; continue; }
     const act = Math.min(1, g.act[c] / 900), tr = Math.min(1, g.transit[c] * f.transitMul);
@@ -170,10 +170,20 @@ export function recompute() {
     const w = g.dens[c]; if (w > 0) { wSat += g.sat[c] * w; wPop += w; wLv += g.lv[c] * w; wTr += traffic * w; wNoise += noise * w; wTransit += Math.min(1, tr) * w; const h = stats2[g.hood[c]]; if (h) { h.sat += g.sat[c] * w; h.lv += g.lv[c] * w; h.w += w; } }
     wAct += act;
   }
-  for (const b of buildings.values()) { const h = stats2[hoodAt(bx(b), bz(b))]; if (!h) continue; h.pop += b.res || 0; h.jobs += b.jobs || 0; if (b.sp && CAT[b.sp] && CAT[b.sp].fx.venue) h.venues++; }
+  for (const b of buildings.values()) {
+    const x = bx(b), z = bz(b), h = stats2[hoodAt(x, z)]; if (!h) continue;
+    h.pop += b.res || 0; h.jobs += b.jobs || 0;
+    if (b.res > 0) h.monthlyResidentialRent += rentOf(sample(g.lv, x, z)) * b.res;
+    if (b.sp && CAT[b.sp] && CAT[b.sp].fx.venue) h.venues++;
+  }
   city.sat = wPop ? wSat / wPop : 0.6; city.lvAvg = wPop ? wLv / wPop : 0.3; city.trafficAvg = wPop ? wTr / wPop : 0; city.noiseAvg = wPop ? wNoise / wPop : 0; city.transitShare = wPop ? wTransit / wPop : 0;
   city.tourism = tour * f.tourMul * (1 + (city.eventTour || 0)); city.rent = rentOf(city.lvAvg);
-  city.hoodStats = stats2.map((h, id) => ({ id, name: hoodName(id), pop: h.pop, jobs: h.jobs, sat: h.w ? h.sat / h.w : 0, lv: h.w ? h.lv / h.w : 0, rent: rentOf(h.w ? h.lv / h.w : 0), venues: h.venues, vibe: vibeOf(h) })).filter((h) => h.id && (h.pop || h.jobs));
+  city.hoodStats = stats2.map((h, id) => ({
+    id, name: hoodName(id), pop: h.pop, jobs: h.jobs, sat: h.w ? h.sat / h.w : 0, lv: h.w ? h.lv / h.w : 0,
+    rent: rentOf(h.w ? h.lv / h.w : 0), monthlyResidentialRent: h.monthlyResidentialRent,
+    avgRentPerResident: h.pop ? h.monthlyResidentialRent / h.pop : null,
+    venues: h.venues, vibe: vibeOf(h),
+  })).filter((h) => h.id && (h.pop || h.jobs));
   // feed back into growth
   const m = sim.mod; for (const k of 'RCOI') m[k] = f[k] - (city.tax[k] - 9) * 0.035 + (city.subsidy[k] ? 0.22 : 0);
   m.R += (city.sat - 0.55) * 0.5 + city.heat * 0.3 - (simT && trafficFx.ready ? clamp((trafficFx.commute - 22) * 0.012, 0, 0.25) : 0);

@@ -50,8 +50,10 @@ export function makePanels(game, { $, esc, toast, icons, refresh }) {
     if (!list.length) return h + '<p class="note">Neighborhoods appear here once people move in. Names follow the real city and can be changed.</p>';
     h += list.map((s) => `<div class="card ${openHood === s.id ? 'open' : ''}"><button class="cardhead" data-a="hood" data-v="${s.id}"><b>${esc(s.name)}</b><span>${s.vibe}</span></button>
       <div class="stats4"><span><b>${fmt(s.pop)}</b>residents</span><span><b>${fmt(s.jobs)}</b>jobs</span><span><b>$${fmt(s.rent)}</b>rent</span><span><b>${pct(s.sat)}</b>happy</span></div>
-      ${openHood === s.id && !game.readOnly ? `<div class="cardbody"><div class="row"><input type="text" id="hoodName" maxlength="40" value="${esc(s.name)}" aria-label="Neighborhood name" /><button class="btn sm" data-a="rename" data-v="${s.id}">Rename</button></div>
-        ${slider('htax' + s.id, 'District tax', city.hoodTax[s.id] || 0, -3, 6, 1, ((city.hoodTax[s.id] || 0) >= 0 ? '+' : '') + (city.hoodTax[s.id] || 0) + '%')}<div class="row"><button class="btn sm" data-a="paint" data-v="${s.id}">Repaint its borders</button><button class="btn sm ghost" data-a="gohood" data-v="${s.id}">Go there</button></div></div>` : ''}</div>`).join('');
+      ${openHood === s.id ? `<div class="cardbody">
+        ${row('Avg rent / resident', !Number.isFinite(s.avgRentPerResident) ? 'No residents' : '$' + fmt(s.avgRentPerResident) + '/mo')}
+        ${game.readOnly ? '' : `<div class="row"><input type="text" id="hoodName" maxlength="40" value="${esc(s.name)}" aria-label="Neighborhood name" /><button class="btn sm" data-a="rename" data-v="${s.id}">Rename</button></div>
+        ${slider('htax' + s.id, 'District tax', city.hoodTax[s.id] || 0, -3, 6, 1, ((city.hoodTax[s.id] || 0) >= 0 ? '+' : '') + (city.hoodTax[s.id] || 0) + '%')}<div class="row"><button class="btn sm" data-a="paint" data-v="${s.id}">Repaint its borders</button><button class="btn sm ghost" data-a="gohood" data-v="${s.id}">Go there</button></div>`}</div>` : ''}</div>`).join('');
     return h;
   }
   const dateOf = (p) => `${SEASONS[(p.d - 1) % 4]} ${p.y}`;
