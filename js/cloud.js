@@ -42,13 +42,13 @@ const table = (bearer, method, query, body) => send(`${URL_}/rest/v1/sf7x7_saves
   method, headers: headers(bearer, { Prefer: 'return=representation' }), ...(body ? { body: JSON.stringify(body) } : {}),
 });
 const mine = {
-  list: (t) => table(t, 'GET', 'select=id,name,meta,share_id,updated_at&order=updated_at.desc&limit=20'),
+  async list(t) { const r = await table(t, 'GET', 'select=id,name,meta,share_id,updated_at&order=updated_at.desc&limit=20'); for (const x of r || []) acctIds.add(x.id); return r; },
   async save(t, name, meta, data, id) {
     const row = { name: String(name || '').slice(0, 60), meta: meta || {}, data };
     if (id) { const r = await table(t, 'PATCH', `id=eq.${idOk(id)}&select=id`, row); if (r && r.length) return r[0].id; }   // gone since: save as new, like the guest path
-    const r = await table(t, 'POST', 'select=id', row); return r[0].id;
+    const r = await table(t, 'POST', 'select=id', row); acctIds.add(r[0].id); return r[0].id;
   },
-  async load(t, id) { const r = await table(t, 'GET', `id=eq.${idOk(id)}&select=data`); return r && r.length ? r[0].data : null; },
+  async load(t, id) { const r = await table(t, 'GET', `id=eq.${idOk(id)}&select=data`); if (r && r.length) acctIds.add(id); return r && r.length ? r[0].data : null; },
   async remove(t, id) { const r = await table(t, 'DELETE', `id=eq.${idOk(id)}&select=id`); return !!(r && r.length); },
   share: (t, id, on) => rpc('sf7x7_share_mine', { p_id: idOk(id), p_on: on }, t),
 };
@@ -75,13 +75,25 @@ const claimed = authReady.then(async () => {
   try { const t = await auth.token(); return t ? { moved: await rpc('sf7x7_claim', { p_token: code }, t) } : { moved: 0 }; }
   catch { return { moved: 0, failed: true }; }
 });
-const acctToken = async () => { await claimed; return auth.token(); };
+// The session token for this call, or null for a guest. A call that starts signed in never falls back to the
+// guest path: if the session ends on the way (signed out in another tab, say), the call fails instead of
+// writing a guest copy of an account save.
+const SIGNED_OUT = 'You were signed out, so this was not saved to your account. Sign in again.';
+const acctIds = new Set();   // ids of account saves seen in this tab: never sent down the guest path
+const acctToken = async () => {
+  const was = auth.user();
+  await claimed; const t = await auth.token();
+  if (!t && was) throw new Error(SIGNED_OUT);
+  return t;
+};
 
 export const cloud = {
   /** The signed-in player, or null for a guest. */
   account: () => auth.user(),
   async list() { const t = await acctToken(); return t ? mine.list(t) : rpc('sf7x7_list', { p_token: syncCode() }); },
-  async save(name, meta, data, id = null) { const t = await acctToken(), packed = await pack(data); return t ? mine.save(t, name, meta, packed, id) : rpc('sf7x7_save', { p_token: syncCode(), p_id: id, p_name: name, p_meta: meta, p_data: packed }); },
+  async save(name, meta, data, id = null) {
+    const t = await acctToken(); if (!t && id && acctIds.has(id)) throw new Error(SIGNED_OUT);   // an account save, but the session is gone
+    const packed = await pack(data); return t ? mine.save(t, name, meta, packed, id) : rpc('sf7x7_save', { p_token: syncCode(), p_id: id, p_name: name, p_meta: meta, p_data: packed }); },
   async load(id) { const t = await acctToken(); return unpack(t ? await mine.load(t, id) : await rpc('sf7x7_load', { p_token: syncCode(), p_id: id })); },
   async remove(id) { const t = await acctToken(); return t ? mine.remove(t, id) : rpc('sf7x7_delete', { p_token: syncCode(), p_id: id }); },
   async share(id, on = true) { const t = await acctToken(); return t ? mine.share(t, id, on) : rpc('sf7x7_share', { p_token: syncCode(), p_id: id, p_on: on }); },

@@ -38,24 +38,36 @@ function adopt(j) {
   writeCookie(j.refresh_token);
 }
 
+// The refresh cookie is shared by every tab, so its absence while this tab still holds a session means
+// another tab signed out. Drop this tab's session too (and void any renewal in flight) the moment that is seen.
+function droppedElsewhere() {
+  if (!session || readCookie()) return false;
+  epoch++; refreshing = null; session = null; emit('signedOut');
+  return true;
+}
+
 async function renew() {
+  if (droppedElsewhere()) return null;
   if (refreshing) return refreshing;
-  const rt = readCookie();
-  if (!rt) { const had = !!session; session = null; if (had) emit('signedOut'); return null; }   // signed out in another tab
+  const rt = readCookie(); if (!rt) { session = null; return null; }
   const mine = epoch;
   refreshing = (async () => {
     try {
       const j = await authFetch('token?grant_type=refresh_token', { refresh_token: rt });
-      if (mine !== epoch) return null;   // signed out while this was in flight
+      if (mine !== epoch) return null;                         // signed out here while this was in flight
+      if (!readCookie()) { droppedElsewhere(); return null; }  // signed out in another tab while this was in flight
       adopt(j); return session;
     } catch (e) {
       if (mine !== epoch) return null;
       if (e.status >= 400 && e.status < 500 && e.status !== 429) { session = null; writeCookie(null); emit('expired'); return null; }   // revoked or used up: sign out
       throw new Error('The sign-in server is busy or out of reach. Try again in a moment.');   // network, 429 or 5xx: keep the cookie
-    } finally { refreshing = null; }
+    } finally { if (mine === epoch) refreshing = null; }
   })();
   return refreshing;
 }
+
+// Notice a sign-out in another tab as soon as this one is looked at again, not only at its next request.
+try { addEventListener('focus', droppedElsewhere); document.addEventListener('visibilitychange', () => { if (!document.hidden) droppedElsewhere(); }); } catch { /* no DOM */ }
 
 // The sign-in link lands back here with ?code=… (or an error). Read it, then scrub it from the address bar
 // and history. Tokens in the fragment (the implicit flow) are never accepted: this page never asks for
@@ -93,12 +105,12 @@ async function start() {
 export const authReady = start();
 
 export const auth = {
-  user: () => (session ? session.user : null),
+  user: () => { droppedElsewhere(); return session ? session.user : null; },
   onChange(fn) { listeners.add(fn); return () => listeners.delete(fn); },
   /** A valid access token, renewed if close to expiry, or null when signed out. */
   async token() {
     await authReady;
-    if (!session) return null;
+    if (droppedElsewhere() || !session) return null;
     if (session.expiresAt - EARLY <= Date.now() / 1000) await renew();
     return session ? session.access : null;
   },

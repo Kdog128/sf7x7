@@ -330,15 +330,17 @@ export function makeUI(game) {
     const { moved, failed } = await cloud.claimed(), n = `${moved} save${moved === 1 ? '' : 's'}`;
     if (failed) toast(`${r.signedIn ? 'Signed in, but s' : 'S'}aves from this browser could not be moved to your account yet. They will move the next time the game opens.`, 'warn');
     else if (moved) toast(`${r.signedIn ? 'Signed in. ' : ''}${n} from this browser moved to your account.`);
-    else if (r.signedIn) toast(`Signed in as ${auth.user().email}`);
+    else if (r.signedIn && auth.user()) toast(`Signed in as ${auth.user().email}`);
   });
 
+  let cloudGen = 0;   // a list that comes back after a newer render (say, after signing out) is stale: drop it
   async function renderCloud() {
+    const gen = ++cloudGen;
     renderAccount();
     const ul = $('cloudList'); $('syncCode').value = syncCode(); $('cloudNote').textContent = auth.user() || isPersisted() ? '' : 'This browser blocks cookies here, so copy your sync code from below to find these saves again.';
     ul.innerHTML = '<li class="meta">Loading saves</li>';
-    try { cloudRows = await cloud.list(); ul.innerHTML = cloudRows.length ? cloudRows.map((r) => rowHtml(r, false)).join('') : '<li class="meta">No cloud saves yet. Name the city and press Save.</li>'; icons(); }
-    catch (x) { ul.innerHTML = ''; err(x.message); }
+    try { const rows = await cloud.list(); if (gen !== cloudGen) return; cloudRows = rows; ul.innerHTML = cloudRows.length ? cloudRows.map((r) => rowHtml(r, false)).join('') : '<li class="meta">No cloud saves yet. Name the city and press Save.</li>'; icons(); }
+    catch (x) { if (gen !== cloudGen) return; ul.innerHTML = ''; err(x.message); }
   }
   const defaultName = () => `San Francisco ${yearOf()}`;
   async function cloudSave(id = null, name = null) {
