@@ -472,6 +472,8 @@ export function makeTools(game) {
   }, { passive: false });
 
   // ---- keyboard ----------------------------------------------------------------------------------
+  // While a single building is being placed, Q/E turn that building instead of the camera.
+  const turnsBuilding = () => { if (T.tool !== 'build') return false; const c = CAT[T.buildKey]; return !!c && !c.rect && T.buildKey !== 'smartfill' && T.buildKey !== 'circuit'; };
   const typing = (e) => /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
   window.addEventListener('keydown', (e) => {
     if (typing(e) || game.modalOpen()) return;
@@ -484,7 +486,7 @@ export function makeTools(game) {
     if (e.code === 'Escape') { if (T.chain) { T.chain = null; T.ctrl = null; } else if (T.tool === 'road' && T.roadMode === 'copy' && T.clip) { T.clip = null; game.ui.refresh(true); } else if (T.lineDraft || T.circuitDraft) { T.lineDraft = null; T.circuitDraft = null; } else if (T.selected) { T.selected = null; game.ui.showInfo(null); } else api.setTool('inspect'); hoverDirty = true; }
     const tool = { Digit1: 'inspect', Digit2: 'road', Digit3: 'zone', Digit4: 'bulldoze', Digit5: 'build', Digit6: 'transit', Digit7: 'terrain' }[e.code]; if (tool) api.setTool(tool);
     if (e.code === 'KeyT' && T.tool === 'build') { T.buildRot = (T.buildRot + 1) & 3; hoverDirty = true; game.ui.refresh(true); }
-    if ((e.code === 'KeyQ' || e.code === 'KeyE') && T.tool === 'build') { const st = Math.PI / 12; T.buildTurn = Math.round((T.buildTurn + (e.code === 'KeyE' ? st : -st)) / st) * st; if (Math.abs(T.buildTurn) > Math.PI - 0.01) T.buildTurn = 0; hoverDirty = true; game.ui.refresh(true); }
+    if ((e.code === 'KeyQ' || e.code === 'KeyE') && turnsBuilding()) { const st = Math.PI / 12; T.buildTurn = Math.round((T.buildTurn + (e.code === 'KeyE' ? st : -st)) / st) * st; if (Math.abs(T.buildTurn) > Math.PI - 0.01) T.buildTurn = 0; hoverDirty = true; game.ui.refresh(true); }
     if (e.code.startsWith('Shift') && T.tool === 'build') hoverDirty = true;
     if (e.code === 'KeyT' && T.tool === 'road' && (T.roadMode === 'blocks' || T.roadMode === 'copy')) { T.stampRot = (T.stampRot + 1) & 3; hoverDirty = true; }
     if (e.code === 'Enter') api.finish();
@@ -508,7 +510,7 @@ export function makeTools(game) {
       if (keys.has('KeyW') || keys.has('ArrowUp')) f += 1; if (keys.has('KeyS') || keys.has('ArrowDown')) f -= 1;
       if (keys.has('KeyD') || keys.has('ArrowRight')) s += 1; if (keys.has('KeyA') || keys.has('ArrowLeft')) s -= 1;
       if (f || s) { rig.panWorld((cy * s - sy * f) * sp, (-sy * s - cy * f) * sp); hoverDirty = true; }
-      if (keys.has('KeyQ')) { rig.rotate(1.6 * dt, 0); hoverDirty = true; } if (keys.has('KeyE')) { rig.rotate(-1.6 * dt, 0); hoverDirty = true; }
+      if (!turnsBuilding()) { if (keys.has('KeyQ')) { rig.rotate(1.6 * dt, 0); hoverDirty = true; } if (keys.has('KeyE')) { rig.rotate(-1.6 * dt, 0); hoverDirty = true; } }
       if (keys.has('KeyR')) rig.rotate(0, 0.9 * dt); if (keys.has('KeyF')) rig.rotate(0, -0.9 * dt);
       if (keys.has('Equal') || keys.has('NumpadAdd')) rig.zoom(Math.exp(-1.6 * dt), null); if (keys.has('Minus') || keys.has('NumpadSubtract')) rig.zoom(Math.exp(1.6 * dt), null);
       if (drag && drag.mode === 'sculpt') { drag.acc += dt; if (drag.acc > 0.07) { const h = groundAt(lastPtr.x, lastPtr.y); if (h) terraform(game, h.x, h.z, T.terraSize, T.terraMode, T.terraMode === 'flatten' ? 1 : 1.5 * (drag.acc / 0.07) * 0.5); drag.acc = 0; hoverDirty = true; } }
