@@ -457,3 +457,8 @@ button.link:hover { text-decoration: underline; }
   .hud.ui-side .bottom { max-width: 100%; }
   .hud.ui-side .options.build-options { flex: 0 1 auto; width: 100%; }
 }
+
+/* population milestone banner */
+.milestone { position: fixed; left: 50%; top: 22%; transform: translateX(-50%); display: grid; gap: var(--space-1); justify-items: center; padding: var(--space-4) var(--space-6); background: var(--bg-solid); border: 1px solid var(--accent); border-radius: 14px; box-shadow: 0 16px 48px oklch(0.1 0.02 60 / 0.5); animation: rise 320ms var(--ease); pointer-events: none; z-index: 30; }
+.milestone b { font-size: 1.6rem; color: var(--accent); letter-spacing: 0.01em; }
+.milestone span { color: var(--muted); }
