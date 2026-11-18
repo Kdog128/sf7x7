@@ -16,6 +16,7 @@ import { cloud, syncCode, setSyncCode, isPersisted } from './cloud.js';
 import { makePanels } from './panels.js';
 import { fmt } from './util.js';
 import { bindBuildScroll, buildScrollOffset } from './build-scroll.js';
+import { checkMilestones, resetMilestones } from './milestones.js';
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -432,6 +433,7 @@ export function makeUI(game) {
     $('tierbar').parentElement.title = $('tiernext').textContent;
     if (tier > lastTier) toast(`San Francisco is now a ${TIERS[tier][0]}`, 'gold');
     lastTier = tier;
+    checkMilestones(stats.pop, $('cityName').textContent);
     for (const el of document.querySelectorAll('.dbar')) {
       const v = sim.demand[el.dataset.k], bar = el.querySelector('i');
       bar.style.height = `${Math.abs(v) * 50}%`; bar.style.bottom = v >= 0 ? '50%' : `${50 - Math.abs(v) * 50}%`; bar.style.opacity = v >= 0 ? 1 : 0.45;
@@ -447,7 +449,7 @@ export function makeUI(game) {
   }
   return {
     toast, refresh, update, showInfo, showRoad, openMenu, tip, tipOpen: () => !$('tip').hidden, toggleHud, setHud, syncSound, syncPops, panels, setup: S, go, titleErr,
-    resetTier() { lastTier = tierOf(stats.pop); shownPop = stats.pop; }, setDebug(t) { $('debug').textContent = t; }, menuOpen: () => !$('menu').hidden,
+    resetTier() { lastTier = tierOf(stats.pop); shownPop = stats.pop; resetMilestones(stats.pop); }, setDebug(t) { $('debug').textContent = t; }, menuOpen: () => !$('menu').hidden,
     frame() { panels.frame(); },
   };
 }
