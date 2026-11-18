@@ -26,6 +26,7 @@ import { drawStreets, southHighway, ERAS } from './place.js';
 import { cloud } from './cloud.js';
 import { makePost } from './post.js';
 import { PRESETS, PRESET_KEYS, EXAMPLES, buildPreset } from './presets.js';
+import { hide as hideMilestone } from './milestones.js';
 
 const canvas = document.getElementById('c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
@@ -93,7 +94,7 @@ const game = {
     document.getElementById('title').classList.add('out'); setTimeout(() => { if (game.mode === 'play') document.getElementById('title').hidden = true; }, 520);
     document.getElementById('hud').hidden = false; game.ui.setHud(true); game.ui.syncSound(); game.ui.refresh(true); canvas.focus();
   },
-  toSetup() { game.mode = 'title'; const t = document.getElementById('title'); t.hidden = false; t.classList.remove('out'); document.getElementById('hud').hidden = true; document.getElementById('showHud').hidden = true; game.ui.titleErr(''); },
+  toSetup() { hideMilestone(); game.mode = 'title'; const t = document.getElementById('title'); t.hidden = false; t.classList.remove('out'); document.getElementById('hud').hidden = true; document.getElementById('showHud').hidden = true; game.ui.titleErr(''); },
   afterLoad() { game.traffic.reset(); game.life.rebuildTransit(); game.life.setCircuit(culture.f1.pts); game.setGfx(city.cfg.gfx || 'auto'); recompute(); game.audio.setOn(city.cfg.sound !== false); game.ui.resetTier(); game.ui.syncPops(); game.ui.refresh(true); },
   async loadExample(k) {
     const ex = EXAMPLES.find((e) => e.k === k); if (!ex) throw new Error('That example city could not be found');
